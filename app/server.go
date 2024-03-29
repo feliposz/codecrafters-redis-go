@@ -3,9 +3,10 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 )
 
 func main() {
@@ -31,18 +32,46 @@ func serveClient(id int, conn net.Conn) {
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
 	for {
-		reader := bufio.NewReader(conn)
-		buffer := make([]byte, 1024)
-		bytesReceived, err := reader.Read(buffer)
-		if err != nil {
-			if err != io.EOF {
-				fmt.Printf("[#%d] Error reading request: %v\n", id, err.Error())
+		scanner := bufio.NewScanner(conn)
+
+		cmd := []string{}
+		var arrSize, strSize int
+		for scanner.Scan() {
+			token := scanner.Text()
+			switch token[0] {
+			case '*':
+				arrSize, _ = strconv.Atoi(token[1:])
+			case '$':
+				strSize, _ = strconv.Atoi(token[1:])
+			default:
+				if len(token) != strSize {
+					fmt.Printf("[#%d] Wrong string size - got: %d, want: %d\n", len(token), strSize)
+					break
+				}
+				arrSize--
+				strSize = 0
+				cmd = append(cmd, token)
 			}
+			if arrSize == 0 {
+				break
+			}
+		}
+
+		if len(cmd) == 0 {
 			break
 		}
-		fmt.Printf("[#%d] Bytes received: %d -> %q\n", id, bytesReceived, buffer[:bytesReceived])
 
-		bytesSent, err := conn.Write([]byte("+PONG\r\n"))
+		var response string
+		switch strings.ToUpper(cmd[0]) {
+		case "COMMAND":
+			response = "+OK\r\n"
+		case "PING":
+			response = "+PONG\r\n"
+		case "ECHO":
+			response = fmt.Sprintf("$%d\r\n%s\r\n", len(cmd[1]), cmd[1])
+		}
+
+		bytesSent, err := conn.Write([]byte(response))
 		if err != nil {
 			fmt.Printf("[#%d] Error writing response: %v\n", id, err.Error())
 			break
