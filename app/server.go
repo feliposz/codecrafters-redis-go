@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -11,9 +12,14 @@ import (
 )
 
 func main() {
-	listener, err := net.Listen("tcp", "0.0.0.0:6379")
+
+	var port int
+	flag.IntVar(&port, "port", 6379, "listen on specified port")
+	flag.Parse()
+
+	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
+		fmt.Printf("Failed to bind to port %d\n", port)
 		os.Exit(1)
 	}
 	fmt.Println("Listening on: ", listener.Addr().String())
