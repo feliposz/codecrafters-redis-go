@@ -16,13 +16,19 @@ func main() {
 	}
 	fmt.Println("Listening on: ", listener.Addr().String())
 
-	conn, err := listener.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+	for id := 1; ; id++ {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+		go serveClient(id, conn)
 	}
+}
+
+func serveClient(id int, conn net.Conn) {
 	defer conn.Close()
-	fmt.Println("Client connected: ", conn.RemoteAddr().String())
+	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
 	for {
 		reader := bufio.NewReader(conn)
@@ -31,14 +37,15 @@ func main() {
 		if err == io.EOF || bytesReceived == 0 {
 			break
 		}
-		fmt.Print("Bytes received: ", bytesReceived)
-		fmt.Printf(" -> %q\n", buffer[:bytesReceived])
+		fmt.Printf("[#%d] Bytes received: %d -> %q\n", id, bytesReceived, buffer[:bytesReceived])
 
 		bytesSent, err := conn.Write([]byte("+PONG\r\n"))
 		if err != nil {
-			fmt.Println("Error writing response: ", err.Error())
+			fmt.Printf("[#%d] Error writing response: %v\n", id, err.Error())
 			break
 		}
-		fmt.Println("Bytes sent: ", bytesSent)
+		fmt.Printf("[#%d] Bytes sent: %d\n", id, bytesSent)
 	}
+
+	fmt.Printf("[#%d] Client closing\n", id)
 }
