@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+var store map[string]string
+
 func main() {
 	listener, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
@@ -16,6 +18,8 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("Listening on: ", listener.Addr().String())
+
+	store = make(map[string]string)
 
 	for id := 1; ; id++ {
 		conn, err := listener.Accept()
@@ -45,7 +49,7 @@ func serveClient(id int, conn net.Conn) {
 				strSize, _ = strconv.Atoi(token[1:])
 			default:
 				if len(token) != strSize {
-					fmt.Printf("[#%d] Wrong string size - got: %d, want: %d\n", len(token), strSize)
+					fmt.Printf("[#%d] Wrong string size - got: %d, want: %d\n", id, len(token), strSize)
 					break
 				}
 				arrSize--
@@ -56,6 +60,8 @@ func serveClient(id int, conn net.Conn) {
 				break
 			}
 		}
+
+		// TODO: handle scanner errors
 
 		if len(cmd) == 0 {
 			break
@@ -68,7 +74,22 @@ func serveClient(id int, conn net.Conn) {
 		case "PING":
 			response = "+PONG\r\n"
 		case "ECHO":
-			response = fmt.Sprintf("$%d\r\n%s\r\n", len(cmd[1]), cmd[1])
+			response = encodeBulkString(cmd[1])
+		case "SET":
+			// TODO: check length
+			key, value := cmd[1], cmd[2]
+			store[key] = value
+			response = "+OK\r\n"
+		case "GET":
+			// TODO: check length
+			key := cmd[1]
+			value, ok := store[key]
+			if ok {
+				response = encodeBulkString(value)
+			} else {
+				response = encodeBulkString("")
+			}
+
 		}
 
 		bytesSent, err := conn.Write([]byte(response))
@@ -80,4 +101,11 @@ func serveClient(id int, conn net.Conn) {
 	}
 
 	fmt.Printf("[#%d] Client closing\n", id)
+}
+
+func encodeBulkString(s string) string {
+	if len(s) == 0 {
+		return "$-1\r\n"
+	}
+	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
 }
