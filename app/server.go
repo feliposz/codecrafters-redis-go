@@ -81,6 +81,8 @@ func serveClient(id int, conn net.Conn) {
 			response = "+PONG\r\n"
 		case "ECHO":
 			response = encodeBulkString(cmd[1])
+		case "INFO":
+			response = encodeBulkString("role:master")
 		case "SET":
 			// TODO: check length
 			key, value := cmd[1], cmd[2]
