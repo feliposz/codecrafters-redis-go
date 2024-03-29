@@ -11,15 +11,35 @@ import (
 	"time"
 )
 
+type serverConfig struct {
+	role, replicaofHost string
+	port, replicaofPort int
+}
+
 func main() {
 
-	var port int
-	flag.IntVar(&port, "port", 6379, "listen on specified port")
+	var config serverConfig
+	flag.IntVar(&config.port, "port", 6379, "listen on specified port")
+	flag.StringVar(&config.replicaofHost, "replicaof", "", "start server in replica mode of given host and port")
 	flag.Parse()
 
-	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
+	if len(config.replicaofHost) == 0 {
+		config.role = "master"
+	} else {
+		config.role = "slave"
+		switch flag.NArg() {
+		case 0:
+			config.replicaofPort = 6379
+		case 1:
+			config.replicaofPort, _ = strconv.Atoi(flag.Arg(0))
+		default:
+			flag.Usage()
+		}
+	}
+
+	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.port))
 	if err != nil {
-		fmt.Printf("Failed to bind to port %d\n", port)
+		fmt.Printf("Failed to bind to port %d\n", config.port)
 		os.Exit(1)
 	}
 	fmt.Println("Listening on: ", listener.Addr().String())
@@ -30,11 +50,11 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go serveClient(id, conn)
+		go serveClient(id, conn, config)
 	}
 }
 
-func serveClient(id int, conn net.Conn) {
+func serveClient(id int, conn net.Conn, config serverConfig) {
 	defer conn.Close()
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
@@ -82,7 +102,7 @@ func serveClient(id int, conn net.Conn) {
 		case "ECHO":
 			response = encodeBulkString(cmd[1])
 		case "INFO":
-			response = encodeBulkString("role:master")
+			response = encodeBulkString(fmt.Sprintf("role:%s", config.role))
 		case "SET":
 			// TODO: check length
 			key, value := cmd[1], cmd[2]
