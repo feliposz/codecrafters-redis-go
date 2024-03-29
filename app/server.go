@@ -34,7 +34,10 @@ func serveClient(id int, conn net.Conn) {
 		reader := bufio.NewReader(conn)
 		buffer := make([]byte, 1024)
 		bytesReceived, err := reader.Read(buffer)
-		if err == io.EOF || bytesReceived == 0 {
+		if err != nil {
+			if err != io.EOF {
+				fmt.Printf("[#%d] Error reading request: %v\n", id, err.Error())
+			}
 			break
 		}
 		fmt.Printf("[#%d] Bytes received: %d -> %q\n", id, bytesReceived, buffer[:bytesReceived])
