@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-var store map[string]string
-
 func main() {
 	listener, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
@@ -18,8 +16,6 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("Listening on: ", listener.Addr().String())
-
-	store = make(map[string]string)
 
 	for id := 1; ; id++ {
 		conn, err := listener.Accept()
@@ -34,6 +30,8 @@ func main() {
 func serveClient(id int, conn net.Conn) {
 	defer conn.Close()
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
+
+	store := make(map[string]string)
 
 	for {
 		scanner := bufio.NewScanner(conn)
