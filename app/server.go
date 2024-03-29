@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -32,6 +33,7 @@ func serveClient(id int, conn net.Conn) {
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
 	store := make(map[string]string)
+	ttl := make(map[string]time.Time)
 
 	for {
 		scanner := bufio.NewScanner(conn)
@@ -77,17 +79,27 @@ func serveClient(id int, conn net.Conn) {
 			// TODO: check length
 			key, value := cmd[1], cmd[2]
 			store[key] = value
+			if len(cmd) == 5 && strings.ToUpper(cmd[3]) == "PX" {
+				expiration, _ := strconv.Atoi(cmd[4])
+				ttl[key] = time.Now().Add(time.Millisecond * time.Duration(expiration))
+			}
 			response = "+OK\r\n"
 		case "GET":
 			// TODO: check length
 			key := cmd[1]
 			value, ok := store[key]
 			if ok {
-				response = encodeBulkString(value)
+				expiration, exists := ttl[key]
+				if !exists || expiration.After(time.Now()) {
+					response = encodeBulkString(value)
+				} else if exists {
+					delete(ttl, key)
+					delete(store, key)
+					response = encodeBulkString("")
+				}
 			} else {
 				response = encodeBulkString("")
 			}
-
 		}
 
 		bytesSent, err := conn.Write([]byte(response))
