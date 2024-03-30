@@ -84,7 +84,7 @@ func main() {
 			fmt.Printf("Size mismatch - got: %d, want: %d\n", receivedSize, rdbSize)
 		}
 
-		go handlePropagation(reader)
+		go handlePropagation(reader, masterConn)
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.port))
@@ -199,9 +199,13 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "COMMAND":
 		response = "+OK\r\n"
 	case "REPLCONF":
-		if len(cmd) == 3 {
-			// TODO: Implement replication
-			response = "+OK\r\n"
+		if len(cmd) >= 2 {
+			if strings.ToUpper(cmd[1]) == "GETACK" {
+				response = encodeStringArray([]string{"REPLCONF", "ACK", "0"})
+			} else {
+				// TODO: Implement proper replication
+				response = "+OK\r\n"
+			}
 		}
 	case "PSYNC":
 		if len(cmd) == 3 {
@@ -271,7 +275,7 @@ func propagate(cmd []string) {
 	}
 }
 
-func handlePropagation(reader *bufio.Reader) {
+func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 	for {
 		cmd := []string{}
 		var arrSize, strSize int
@@ -306,7 +310,16 @@ func handlePropagation(reader *bufio.Reader) {
 			break
 		}
 
-		fmt.Printf("[from master] Command = %v\n", cmd)
-		handleCommand(cmd)
+		fmt.Printf("[from master] Command = %q\n", cmd)
+		response, _ := handleCommand(cmd)
+		fmt.Printf("response = %q\n", response)
+		if strings.ToUpper(cmd[0]) == "REPLCONF" {
+			fmt.Printf("ack = %q\n", cmd)
+			_, err := masterConn.Write([]byte(response))
+			if err != nil {
+				fmt.Printf("Error responding to master: %v\n", err.Error())
+				break
+			}
+		}
 	}
 }
