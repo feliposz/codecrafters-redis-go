@@ -46,6 +46,21 @@ func main() {
 		}
 	}
 
+	if config.role == "slave" {
+		masterConn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", config.replicaofHost, config.replicaofPort))
+		if err != nil {
+			fmt.Printf("Failed to connect to master %v\n", err)
+			os.Exit(1)
+		}
+		//defer masterConn.Close()
+
+		masterConn.Write([]byte("*1\r\n$4\r\nping\r\n"))
+		reader := bufio.NewReader(masterConn)
+		response, _ := reader.ReadString('\n')
+		fmt.Println(response)
+		masterConn.Close()
+	}
+
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.port))
 	if err != nil {
 		fmt.Printf("Failed to bind to port %d\n", config.port)
