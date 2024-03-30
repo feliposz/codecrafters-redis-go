@@ -295,7 +295,7 @@ func handleWait(count, timeout int) string {
 	timeoutTimer := time.After(time.Duration(timeout) * time.Millisecond)
 
 	acks := 0
-	for acks < count && acks < active {
+	for acks < active {
 		select {
 		case <-ackReceived:
 			acks++
