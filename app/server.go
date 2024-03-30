@@ -27,6 +27,7 @@ var ttl map[string]time.Time
 var config serverConfig
 var replicas []net.Conn
 var replicaOffset int
+var ackReceived chan bool
 
 func main() {
 
@@ -97,6 +98,7 @@ func main() {
 
 	store = make(map[string]string)
 	ttl = make(map[string]time.Time)
+	ackReceived = make(chan bool)
 
 	for id := 1; ; id++ {
 		conn, err := listener.Accept()
@@ -204,13 +206,15 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "COMMAND":
 		response = "+OK\r\n"
 	case "REPLCONF":
-		if len(cmd) >= 2 {
-			if strings.ToUpper(cmd[1]) == "GETACK" {
-				response = encodeStringArray([]string{"REPLCONF", "ACK", strconv.Itoa(replicaOffset)})
-			} else {
-				// TODO: Implement proper replication
-				response = "+OK\r\n"
-			}
+		switch strings.ToUpper(cmd[1]) {
+		case "GETACK":
+			response = encodeStringArray([]string{"REPLCONF", "ACK", strconv.Itoa(replicaOffset)})
+		case "ACK":
+			ackReceived <- true
+			response = ""
+		default:
+			// TODO: Implement proper replication
+			response = "+OK\r\n"
 		}
 	case "PSYNC":
 		if len(cmd) == 3 {
@@ -254,7 +258,9 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			response = encodeBulkString("")
 		}
 	case "WAIT":
-		response = encodeInt(len(replicas))
+		count, _ := strconv.Atoi(cmd[1])
+		timeout, _ := strconv.Atoi(cmd[2])
+		response = handleWait(count, timeout)
 	}
 	if isWrite {
 		propagate(cmd)
@@ -282,6 +288,24 @@ func propagate(cmd []string) {
 	}
 }
 
+func handleWait(count, timeout int) string {
+	propagate([]string{"REPLCONF", "GETACK", "*"})
+	active := len(replicas)
+
+	timeoutTimer := time.After(time.Duration(timeout) * time.Millisecond)
+
+	acks := 0
+	for acks < count && acks < active {
+		select {
+		case <-ackReceived:
+			acks++
+		case <-timeoutTimer:
+			active = -1 // force break
+		}
+	}
+	return encodeInt(acks)
+}
+
 func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 	for {
 		cmd := []string{}
@@ -294,10 +318,11 @@ func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 			// HACK: should count bytes properly?
 			cmdSize += len(token)
 			token = strings.TrimRight(token, "\r\n")
-			switch token[0] {
-			case '*':
+			// TODO: do proper RESP parsing!!!
+			switch {
+			case arrSize == 0 && token[0] == '*':
 				arrSize, _ = strconv.Atoi(token[1:])
-			case '$':
+			case strSize == 0 && token[0] == '$':
 				strSize, _ = strconv.Atoi(token[1:])
 			default:
 				if len(token) != strSize {
