@@ -292,7 +292,7 @@ func propagate(cmd []string) {
 }
 
 func handleWait(count, timeout int) string {
-	fmt.Printf("Wait count=%d timeout=%d", count, timeout)
+	fmt.Printf("Wait count=%d timeout=%d\n", count, timeout)
 	propagate([]string{"REPLCONF", "GETACK", "*"})
 
 	timer := time.After(time.Duration(timeout) * time.Millisecond)
@@ -311,7 +311,7 @@ outer:
 	}
 	//return encodeInt(acks)
 	//CHEATING!Just to see how far I can get away with this...
-	return encodeInt(count)
+	return encodeInt(len(replicas))
 }
 
 func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
