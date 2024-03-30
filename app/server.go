@@ -194,6 +194,10 @@ func encodeStringArray(arr []string) string {
 	return result
 }
 
+func encodeInt(n int) string {
+	return fmt.Sprintf(":%d\r\n", n)
+}
+
 func handleCommand(cmd []string) (response string, resynch bool) {
 	isWrite := false
 	switch strings.ToUpper(cmd[0]) {
@@ -250,7 +254,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			response = encodeBulkString("")
 		}
 	case "WAIT":
-		response = ":0\r\n"
+		response = encodeInt(len(replicas))
 	}
 	if isWrite {
 		propagate(cmd)
@@ -268,7 +272,7 @@ func propagate(cmd []string) {
 		// remove stale replicas
 		if err != nil {
 			fmt.Printf("Disconnected: %s\n", replicas[i].RemoteAddr().String())
-			if len(replicas) > 1 {
+			if len(replicas) > 0 {
 				last := len(replicas) - 1
 				replicas[i] = replicas[last]
 				replicas = replicas[:last]
