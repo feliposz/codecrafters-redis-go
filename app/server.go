@@ -256,9 +256,11 @@ func propagate(cmd []string) {
 		return
 	}
 	for i := 0; i < len(replicas); i++ {
+		fmt.Printf("Replicating to: %s\n", replicas[i].RemoteAddr().String())
 		_, err := replicas[i].Write([]byte(encodeStringArray(cmd)))
 		// remove stale replicas
 		if err != nil {
+			fmt.Printf("Disconnected: %s\n", replicas[i].RemoteAddr().String())
 			if len(replicas) > 1 {
 				last := len(replicas) - 1
 				replicas[i] = replicas[last]
@@ -286,7 +288,7 @@ func handlePropagation(reader *bufio.Reader) {
 				strSize, _ = strconv.Atoi(token[1:])
 			default:
 				if len(token) != strSize {
-					fmt.Printf("[master] Wrong string size - got: %d, want: %d\n", len(token), strSize)
+					fmt.Printf("[from master] Wrong string size - got: %d, want: %d\n", len(token), strSize)
 					break
 				}
 				arrSize--
@@ -304,7 +306,7 @@ func handlePropagation(reader *bufio.Reader) {
 			break
 		}
 
-		fmt.Printf("[master] Command = %v\n", cmd)
+		fmt.Printf("[from master] Command = %v\n", cmd)
 		handleCommand(cmd)
 	}
 }
