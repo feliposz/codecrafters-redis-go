@@ -169,10 +169,14 @@ func handleCommand(cmd []string) (response string) {
 		response = "+OK\r\n"
 	case "REPLCONF":
 		if len(cmd) == 3 {
+			// TODO: Implement replication
 			response = "+OK\r\n"
 		}
 	case "PSYNC":
-		response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", config.replid)
+		if len(cmd) == 3 {
+			// TODO: Implement synch
+			response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", config.replid)
+		}
 	case "PING":
 		response = "+PONG\r\n"
 	case "ECHO":
