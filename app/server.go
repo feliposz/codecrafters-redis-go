@@ -277,10 +277,9 @@ func propagate(cmd []string) {
 }
 
 func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
-	var cmdSize int
 	for {
 		cmd := []string{}
-		var arrSize, strSize int
+		var arrSize, strSize, cmdSize int
 		for {
 			token, err := reader.ReadString('\n')
 			if err != nil {
