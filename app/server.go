@@ -54,10 +54,15 @@ func main() {
 		}
 		//defer masterConn.Close()
 
-		masterConn.Write([]byte("*1\r\n$4\r\nping\r\n"))
+		// TODO: check responses
 		reader := bufio.NewReader(masterConn)
-		response, _ := reader.ReadString('\n')
-		fmt.Println(response)
+		masterConn.Write([]byte(encodeStringArray([]string{"PING"})))
+		reader.ReadString('\n')
+		masterConn.Write([]byte(encodeStringArray([]string{"REPLCONF", "listening-port", strconv.Itoa(config.port)})))
+		reader.ReadString('\n')
+		masterConn.Write([]byte(encodeStringArray([]string{"REPLCONF", "capa", "psync2"})))
+		reader.ReadString('\n')
+
 		masterConn.Close()
 	}
 
@@ -127,6 +132,7 @@ func serveClient(id int, conn net.Conn, config serverConfig) {
 			break
 		}
 
+		fmt.Printf("[#%d] Command = %v\n", id, cmd)
 		response := handleCommand(cmd)
 
 		bytesSent, err := conn.Write([]byte(response))
@@ -134,7 +140,7 @@ func serveClient(id int, conn net.Conn, config serverConfig) {
 			fmt.Printf("[#%d] Error writing response: %v\n", id, err.Error())
 			break
 		}
-		fmt.Printf("[#%d] Bytes sent: %d\n", id, bytesSent)
+		fmt.Printf("[#%d] Bytes sent: %d %q\n", id, bytesSent, response)
 	}
 
 	fmt.Printf("[#%d] Client closing\n", id)
@@ -147,9 +153,20 @@ func encodeBulkString(s string) string {
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
 }
 
+func encodeStringArray(arr []string) string {
+	result := fmt.Sprintf("*%d\r\n", len(arr))
+	for _, s := range arr {
+		result += encodeBulkString(s)
+	}
+	return result
+}
+
 func handleCommand(cmd []string) (response string) {
 	switch strings.ToUpper(cmd[0]) {
 	case "COMMAND":
+		response = "+OK\r\n"
+	case "REPLCONF":
+		// TODO: placeholder
 		response = "+OK\r\n"
 	case "PING":
 		response = "+PONG\r\n"
