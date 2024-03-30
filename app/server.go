@@ -159,12 +159,14 @@ func serveClient(id int, conn net.Conn) {
 		fmt.Printf("[#%d] Command = %v\n", id, cmd)
 		response, resynch := handleCommand(cmd)
 
-		bytesSent, err := conn.Write([]byte(response))
-		if err != nil {
-			fmt.Printf("[#%d] Error writing response: %v\n", id, err.Error())
-			break
+		if len(response) > 0 {
+			bytesSent, err := conn.Write([]byte(response))
+			if err != nil {
+				fmt.Printf("[#%d] Error writing response: %v\n", id, err.Error())
+				break
+			}
+			fmt.Printf("[#%d] Bytes sent: %d %q\n", id, bytesSent, response)
 		}
-		fmt.Printf("[#%d] Bytes sent: %d %q\n", id, bytesSent, response)
 
 		if resynch {
 			emptyRDB := []byte("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
@@ -290,17 +292,19 @@ func propagate(cmd []string) {
 
 func handleWait(count, timeout int) string {
 	propagate([]string{"REPLCONF", "GETACK", "*"})
-	active := len(replicas)
 
-	timeoutTimer := time.After(time.Duration(timeout) * time.Millisecond)
+	timer := time.After(time.Duration(timeout) * time.Millisecond)
 
 	acks := 0
-	for acks < active {
+outer:
+	for acks < count {
 		select {
 		case <-ackReceived:
+			fmt.Println("acks =", acks)
 			acks++
-		case <-timeoutTimer:
-			active = -1 // force break
+		case <-timer:
+			fmt.Println("timeout! acks =", acks)
+			break outer
 		}
 	}
 	return encodeInt(acks)
