@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -135,7 +136,7 @@ func serveClient(id int, conn net.Conn, config serverConfig) {
 		}
 
 		fmt.Printf("[#%d] Command = %v\n", id, cmd)
-		response := handleCommand(cmd)
+		response, resynch := handleCommand(cmd)
 
 		bytesSent, err := conn.Write([]byte(response))
 		if err != nil {
@@ -143,6 +144,16 @@ func serveClient(id int, conn net.Conn, config serverConfig) {
 			break
 		}
 		fmt.Printf("[#%d] Bytes sent: %d %q\n", id, bytesSent, response)
+
+		if resynch {
+			emptyRDB := []byte("524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2")
+			buffer := make([]byte, hex.DecodedLen(len(emptyRDB)))
+			// TODO: check for errors
+			hex.Decode(buffer, emptyRDB)
+			conn.Write([]byte(fmt.Sprintf("$%d\r\n", len(buffer))))
+			conn.Write(buffer)
+			fmt.Printf("[#%d] full resynch sent: %d\n", id, len(buffer))
+		}
 	}
 
 	fmt.Printf("[#%d] Client closing\n", id)
@@ -163,7 +174,7 @@ func encodeStringArray(arr []string) string {
 	return result
 }
 
-func handleCommand(cmd []string) (response string) {
+func handleCommand(cmd []string) (response string, resynch bool) {
 	switch strings.ToUpper(cmd[0]) {
 	case "COMMAND":
 		response = "+OK\r\n"
@@ -176,6 +187,7 @@ func handleCommand(cmd []string) (response string) {
 		if len(cmd) == 3 {
 			// TODO: Implement synch
 			response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", config.replid)
+			resynch = true
 		}
 	case "PING":
 		response = "+PONG\r\n"
