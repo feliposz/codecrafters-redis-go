@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -12,19 +13,27 @@ import (
 )
 
 type serverConfig struct {
-	role, replicaofHost string
-	port, replicaofPort int
+	port          int
+	role          string
+	replid        string
+	replOffset    int
+	replicaofHost string
+	replicaofPort int
 }
+
+var store map[string]string
+var ttl map[string]time.Time
+var config serverConfig
 
 func main() {
 
-	var config serverConfig
 	flag.IntVar(&config.port, "port", 6379, "listen on specified port")
 	flag.StringVar(&config.replicaofHost, "replicaof", "", "start server in replica mode of given host and port")
 	flag.Parse()
 
 	if len(config.replicaofHost) == 0 {
 		config.role = "master"
+		config.replid = randReplid()
 	} else {
 		config.role = "slave"
 		switch flag.NArg() {
@@ -44,6 +53,9 @@ func main() {
 	}
 	fmt.Println("Listening on: ", listener.Addr().String())
 
+	store = make(map[string]string)
+	ttl = make(map[string]time.Time)
+
 	for id := 1; ; id++ {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -54,12 +66,19 @@ func main() {
 	}
 }
 
+func randReplid() string {
+	chars := []byte("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	result := make([]byte, 40)
+	for i := range result {
+		c := rand.Intn(len(chars))
+		result[i] = chars[c]
+	}
+	return string(result)
+}
+
 func serveClient(id int, conn net.Conn, config serverConfig) {
 	defer conn.Close()
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
-
-	store := make(map[string]string)
-	ttl := make(map[string]time.Time)
 
 	for {
 		scanner := bufio.NewScanner(conn)
@@ -93,42 +112,7 @@ func serveClient(id int, conn net.Conn, config serverConfig) {
 			break
 		}
 
-		var response string
-		switch strings.ToUpper(cmd[0]) {
-		case "COMMAND":
-			response = "+OK\r\n"
-		case "PING":
-			response = "+PONG\r\n"
-		case "ECHO":
-			response = encodeBulkString(cmd[1])
-		case "INFO":
-			response = encodeBulkString(fmt.Sprintf("role:%s", config.role))
-		case "SET":
-			// TODO: check length
-			key, value := cmd[1], cmd[2]
-			store[key] = value
-			if len(cmd) == 5 && strings.ToUpper(cmd[3]) == "PX" {
-				expiration, _ := strconv.Atoi(cmd[4])
-				ttl[key] = time.Now().Add(time.Millisecond * time.Duration(expiration))
-			}
-			response = "+OK\r\n"
-		case "GET":
-			// TODO: check length
-			key := cmd[1]
-			value, ok := store[key]
-			if ok {
-				expiration, exists := ttl[key]
-				if !exists || expiration.After(time.Now()) {
-					response = encodeBulkString(value)
-				} else if exists {
-					delete(ttl, key)
-					delete(store, key)
-					response = encodeBulkString("")
-				}
-			} else {
-				response = encodeBulkString("")
-			}
-		}
+		response := handleCommand(cmd)
 
 		bytesSent, err := conn.Write([]byte(response))
 		if err != nil {
@@ -146,4 +130,45 @@ func encodeBulkString(s string) string {
 		return "$-1\r\n"
 	}
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
+}
+
+func handleCommand(cmd []string) (response string) {
+	switch strings.ToUpper(cmd[0]) {
+	case "COMMAND":
+		response = "+OK\r\n"
+	case "PING":
+		response = "+PONG\r\n"
+	case "ECHO":
+		response = encodeBulkString(cmd[1])
+	case "INFO":
+		// TODO: check for replication
+		response = encodeBulkString(fmt.Sprintf("role:%s\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",
+			config.role, config.replid, config.replOffset))
+	case "SET":
+		// TODO: check length
+		key, value := cmd[1], cmd[2]
+		store[key] = value
+		if len(cmd) == 5 && strings.ToUpper(cmd[3]) == "PX" {
+			expiration, _ := strconv.Atoi(cmd[4])
+			ttl[key] = time.Now().Add(time.Millisecond * time.Duration(expiration))
+		}
+		response = "+OK\r\n"
+	case "GET":
+		// TODO: check length
+		key := cmd[1]
+		value, ok := store[key]
+		if ok {
+			expiration, exists := ttl[key]
+			if !exists || expiration.After(time.Now()) {
+				response = encodeBulkString(value)
+			} else if exists {
+				delete(ttl, key)
+				delete(store, key)
+				response = encodeBulkString("")
+			}
+		} else {
+			response = encodeBulkString("")
+		}
+	}
+	return
 }
