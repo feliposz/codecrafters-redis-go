@@ -62,6 +62,8 @@ func main() {
 		reader.ReadString('\n')
 		masterConn.Write([]byte(encodeStringArray([]string{"REPLCONF", "capa", "psync2"})))
 		reader.ReadString('\n')
+		masterConn.Write([]byte(encodeStringArray([]string{"PSYNC", "?", "-1"})))
+		reader.ReadString('\n')
 
 		masterConn.Close()
 	}
@@ -168,6 +170,8 @@ func handleCommand(cmd []string) (response string) {
 	case "REPLCONF":
 		// TODO: placeholder
 		response = "+OK\r\n"
+	case "PSYNC":
+		response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", config.replid)
 	case "PING":
 		response = "+PONG\r\n"
 	case "ECHO":
