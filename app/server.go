@@ -249,6 +249,8 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 		} else {
 			response = encodeBulkString("")
 		}
+	case "WAIT":
+		response = ":0\r\n"
 	}
 	if isWrite {
 		propagate(cmd)
