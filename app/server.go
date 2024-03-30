@@ -168,8 +168,9 @@ func handleCommand(cmd []string) (response string) {
 	case "COMMAND":
 		response = "+OK\r\n"
 	case "REPLCONF":
-		// TODO: placeholder
-		response = "+OK\r\n"
+		if len(cmd) == 3 {
+			response = "+OK\r\n"
+		}
 	case "PSYNC":
 		response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", config.replid)
 	case "PING":
@@ -177,9 +178,10 @@ func handleCommand(cmd []string) (response string) {
 	case "ECHO":
 		response = encodeBulkString(cmd[1])
 	case "INFO":
-		// TODO: check for replication
-		response = encodeBulkString(fmt.Sprintf("role:%s\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",
-			config.role, config.replid, config.replOffset))
+		if len(cmd) == 2 && strings.ToUpper(cmd[1]) == "REPLICATION" {
+			response = encodeBulkString(fmt.Sprintf("role:%s\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",
+				config.role, config.replid, config.replOffset))
+		}
 	case "SET":
 		// TODO: check length
 		key, value := cmd[1], cmd[2]
