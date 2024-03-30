@@ -25,7 +25,7 @@ type serverConfig struct {
 var store map[string]string
 var ttl map[string]time.Time
 var config serverConfig
-var replica net.Conn
+var replicas []net.Conn
 
 func main() {
 
@@ -171,7 +171,7 @@ func serveClient(id int, conn net.Conn) {
 			conn.Write([]byte(fmt.Sprintf("$%d\r\n", len(buffer))))
 			conn.Write(buffer)
 			fmt.Printf("[#%d] full resynch sent: %d\n", id, len(buffer))
-			replica = conn
+			replicas = append(replicas, conn)
 		}
 	}
 
@@ -252,13 +252,20 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 }
 
 func propagate(cmd []string) {
-	if replica == nil {
+	if len(replicas) == 0 {
 		return
 	}
-	_, err := replica.Write([]byte(encodeStringArray(cmd)))
-	// HACK: just ignore replica disconnect?
-	if err != nil {
-		replica = nil
+	for i := 0; i < len(replicas); i++ {
+		_, err := replicas[i].Write([]byte(encodeStringArray(cmd)))
+		// remove stale replicas
+		if err != nil {
+			if len(replicas) > 1 {
+				last := len(replicas) - 1
+				replicas[i] = replicas[last]
+				replicas = replicas[:last]
+				i--
+			}
+		}
 	}
 }
 
