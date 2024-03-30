@@ -260,6 +260,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			response = encodeBulkString("")
 		}
 	case "WAIT":
+		fmt.Println(cmd)
 		count, _ := strconv.Atoi(cmd[1])
 		timeout, _ := strconv.Atoi(cmd[2])
 		response = handleWait(count, timeout)
@@ -291,6 +292,7 @@ func propagate(cmd []string) {
 }
 
 func handleWait(count, timeout int) string {
+	fmt.Printf("Wait count=%d timeout=%d", count, timeout)
 	propagate([]string{"REPLCONF", "GETACK", "*"})
 
 	timer := time.After(time.Duration(timeout) * time.Millisecond)
