@@ -25,6 +25,7 @@ type serverConfig struct {
 var store map[string]string
 var ttl map[string]time.Time
 var config serverConfig
+var replica net.Conn
 
 func main() {
 
@@ -53,7 +54,7 @@ func main() {
 			fmt.Printf("Failed to connect to master %v\n", err)
 			os.Exit(1)
 		}
-		//defer masterConn.Close()
+		defer masterConn.Close()
 
 		// TODO: check responses
 		reader := bufio.NewReader(masterConn)
@@ -66,7 +67,24 @@ func main() {
 		masterConn.Write([]byte(encodeStringArray([]string{"PSYNC", "?", "-1"})))
 		reader.ReadString('\n')
 
-		masterConn.Close()
+		// receiving RDB (ignoring it for now)
+		response, _ := reader.ReadString('\n')
+		if response[0] != '$' {
+			fmt.Printf("Invalid response\n")
+			os.Exit(1)
+		}
+		rdbSize, _ := strconv.Atoi(response[1 : len(response)-2])
+		buffer := make([]byte, rdbSize)
+		receivedSize, err := reader.Read(buffer)
+		if err != nil {
+			fmt.Printf("Invalid RDB received %v\n", err)
+			os.Exit(1)
+		}
+		if rdbSize != receivedSize {
+			fmt.Printf("Size mismatch - got: %d, want: %d\n", receivedSize, rdbSize)
+		}
+
+		go handlePropagation(reader)
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.port))
@@ -85,7 +103,7 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go serveClient(id, conn, config)
+		go serveClient(id, conn)
 	}
 }
 
@@ -99,7 +117,7 @@ func randReplid() string {
 	return string(result)
 }
 
-func serveClient(id int, conn net.Conn, config serverConfig) {
+func serveClient(id int, conn net.Conn) {
 	defer conn.Close()
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
@@ -153,6 +171,7 @@ func serveClient(id int, conn net.Conn, config serverConfig) {
 			conn.Write([]byte(fmt.Sprintf("$%d\r\n", len(buffer))))
 			conn.Write(buffer)
 			fmt.Printf("[#%d] full resynch sent: %d\n", id, len(buffer))
+			replica = conn
 		}
 	}
 
@@ -175,6 +194,7 @@ func encodeStringArray(arr []string) string {
 }
 
 func handleCommand(cmd []string) (response string, resynch bool) {
+	isWrite := false
 	switch strings.ToUpper(cmd[0]) {
 	case "COMMAND":
 		response = "+OK\r\n"
@@ -199,6 +219,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 				config.role, config.replid, config.replOffset))
 		}
 	case "SET":
+		isWrite = true
 		// TODO: check length
 		key, value := cmd[1], cmd[2]
 		store[key] = value
@@ -224,5 +245,59 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			response = encodeBulkString("")
 		}
 	}
+	if isWrite {
+		propagate(cmd)
+	}
 	return
+}
+
+func propagate(cmd []string) {
+	if replica == nil {
+		return
+	}
+	_, err := replica.Write([]byte(encodeStringArray(cmd)))
+	// HACK: just ignore replica disconnect?
+	if err != nil {
+		replica = nil
+	}
+}
+
+func handlePropagation(reader *bufio.Reader) {
+	for {
+		cmd := []string{}
+		var arrSize, strSize int
+		for {
+			token, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			token = strings.TrimRight(token, "\r\n")
+			switch token[0] {
+			case '*':
+				arrSize, _ = strconv.Atoi(token[1:])
+			case '$':
+				strSize, _ = strconv.Atoi(token[1:])
+			default:
+				if len(token) != strSize {
+					fmt.Printf("[master] Wrong string size - got: %d, want: %d\n", len(token), strSize)
+					break
+				}
+				arrSize--
+				strSize = 0
+				cmd = append(cmd, token)
+			}
+			if arrSize == 0 {
+				break
+			}
+		}
+
+		// TODO: handle scanner errors
+
+		if len(cmd) == 0 {
+			break
+		}
+
+		fmt.Printf("[master] Command = %v\n", cmd)
+		handleCommand(cmd)
+	}
 }
