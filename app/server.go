@@ -26,6 +26,7 @@ var store map[string]string
 var ttl map[string]time.Time
 var config serverConfig
 var replicas []net.Conn
+var replicaOffset int
 
 func main() {
 
@@ -201,7 +202,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "REPLCONF":
 		if len(cmd) >= 2 {
 			if strings.ToUpper(cmd[1]) == "GETACK" {
-				response = encodeStringArray([]string{"REPLCONF", "ACK", "0"})
+				response = encodeStringArray([]string{"REPLCONF", "ACK", strconv.Itoa(replicaOffset)})
 			} else {
 				// TODO: Implement proper replication
 				response = "+OK\r\n"
@@ -276,6 +277,7 @@ func propagate(cmd []string) {
 }
 
 func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
+	var cmdSize int
 	for {
 		cmd := []string{}
 		var arrSize, strSize int
@@ -284,6 +286,8 @@ func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 			if err != nil {
 				return
 			}
+			// HACK: should count bytes properly?
+			cmdSize += len(token)
 			token = strings.TrimRight(token, "\r\n")
 			switch token[0] {
 			case '*':
@@ -312,14 +316,15 @@ func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 
 		fmt.Printf("[from master] Command = %q\n", cmd)
 		response, _ := handleCommand(cmd)
-		fmt.Printf("response = %q\n", response)
+		//fmt.Printf("response = %q\n", response)
 		if strings.ToUpper(cmd[0]) == "REPLCONF" {
-			fmt.Printf("ack = %q\n", cmd)
+			//fmt.Printf("ack = %q\n", cmd)
 			_, err := masterConn.Write([]byte(response))
 			if err != nil {
 				fmt.Printf("Error responding to master: %v\n", err.Error())
 				break
 			}
 		}
+		replicaOffset += cmdSize
 	}
 }
