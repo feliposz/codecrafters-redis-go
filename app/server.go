@@ -552,7 +552,23 @@ func readRDB(rdbPath string) error {
 					return err
 				}
 
-				// TODO: handle expiry
+				var expiration time.Time
+				if valueType == 0xFD {
+					bytes := make([]byte, 4)
+					reader.Read(bytes)
+					expiration = time.Unix(int64(bytes[0])|int64(bytes[1])<<8|int64(bytes[2])<<16|int64(bytes[3])<<24, 0)
+					valueType, err = reader.ReadByte()
+				} else if valueType == 0xFC {
+					bytes := make([]byte, 8)
+					reader.Read(bytes)
+					expiration = time.UnixMilli(int64(bytes[0]) | int64(bytes[1])<<8 | int64(bytes[2])<<16 | int64(bytes[3])<<24 |
+						int64(bytes[4])<<32 | int64(bytes[5])<<40 | int64(bytes[6])<<48 | int64(bytes[7])<<56)
+					valueType, err = reader.ReadByte()
+				}
+
+				if err != nil {
+					return err
+				}
 
 				if valueType > 14 {
 					startDataRead = false
@@ -562,8 +578,16 @@ func readRDB(rdbPath string) error {
 
 				key, _ := readEncodedString(reader)
 				value, _ := readEncodedString(reader)
-				fmt.Printf("Reading key/value: %q => %q\n", key, value)
-				store[key] = value
+				fmt.Printf("Reading key/value: %q => %q Expiration: (%v)\n", key, value, expiration)
+
+				now := time.Now()
+
+				if expiration.IsZero() || expiration.After(now) {
+					if expiration.After(now) {
+						ttl[key] = expiration
+					}
+					store[key] = value
+				}
 			}
 		}
 	}
