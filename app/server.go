@@ -121,20 +121,21 @@ func randReplid() string {
 }
 
 func serveClient(id int, conn net.Conn) {
-	defer conn.Close()
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
-	for {
-		scanner := bufio.NewScanner(conn)
+	scanner := bufio.NewScanner(conn)
 
+	for {
 		cmd := []string{}
 		var arrSize, strSize int
+		fmt.Printf("[%d] Waiting command\n", id)
 		for scanner.Scan() {
 			token := scanner.Text()
-			switch token[0] {
-			case '*':
+			//fmt.Printf("[%d] Token: %q\n", id, token)
+			switch {
+			case arrSize == 0 && token[0] == '*':
 				arrSize, _ = strconv.Atoi(token[1:])
-			case '$':
+			case strSize == 0 && token[0] == '$':
 				strSize, _ = strconv.Atoi(token[1:])
 			default:
 				if len(token) != strSize {
@@ -156,7 +157,7 @@ func serveClient(id int, conn net.Conn) {
 			break
 		}
 
-		fmt.Printf("[#%d] Command = %v\n", id, cmd)
+		fmt.Printf("[#%d] Command = %q\n", id, cmd)
 		response, resynch := handleCommand(cmd)
 
 		if len(response) > 0 {
@@ -177,10 +178,12 @@ func serveClient(id int, conn net.Conn) {
 			conn.Write(buffer)
 			fmt.Printf("[#%d] full resynch sent: %d\n", id, len(buffer))
 			replicas = append(replicas, conn)
+			return
 		}
 	}
 
 	fmt.Printf("[#%d] Client closing\n", id)
+	conn.Close()
 }
 
 func encodeBulkString(s string) string {
@@ -275,6 +278,7 @@ func propagate(cmd []string) {
 	if len(replicas) == 0 {
 		return
 	}
+	fmt.Printf("Propagating = %q\n", cmd)
 	for i := 0; i < len(replicas); i++ {
 		fmt.Printf("Replicating to: %s\n", replicas[i].RemoteAddr().String())
 		_, err := replicas[i].Write([]byte(encodeStringArray(cmd)))
@@ -293,7 +297,22 @@ func propagate(cmd []string) {
 
 func handleWait(count, timeout int) string {
 	fmt.Printf("Wait count=%d timeout=%d\n", count, timeout)
-	propagate([]string{"REPLCONF", "GETACK", "*"})
+	propagate([]string{"replconf", "getack", "*"})
+
+	for i := 0; i < len(replicas); i++ {
+		go func(conn net.Conn) {
+			fmt.Println("waiting response from replica", conn.RemoteAddr().String())
+			buffer := make([]byte, 1024)
+			// TODO: Ignoring result, just "flushing" the response
+			_, err := conn.Read(buffer)
+			if err == nil {
+				fmt.Println("got response from replica", conn.RemoteAddr().String())
+			} else {
+				fmt.Println("error from replica", conn.RemoteAddr().String(), " => ", err.Error())
+			}
+			ackReceived <- true
+		}(replicas[i])
+	}
 
 	timer := time.After(time.Duration(timeout) * time.Millisecond)
 
@@ -302,16 +321,15 @@ outer:
 	for acks < count {
 		select {
 		case <-ackReceived:
-			fmt.Println("acks =", acks)
 			acks++
+			fmt.Println("acks =", acks)
 		case <-timer:
 			fmt.Println("timeout! acks =", acks)
 			break outer
 		}
 	}
-	//return encodeInt(acks)
-	//CHEATING!Just to see how far I can get away with this...
-	return encodeInt(len(replicas))
+
+	return encodeInt(acks)
 }
 
 func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
