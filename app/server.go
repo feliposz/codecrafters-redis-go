@@ -20,6 +20,8 @@ type serverConfig struct {
 	replOffset    int
 	replicaofHost string
 	replicaofPort int
+	dir           string
+	dbfilename    string
 }
 
 var store map[string]string
@@ -33,6 +35,8 @@ func main() {
 
 	flag.IntVar(&config.port, "port", 6379, "listen on specified port")
 	flag.StringVar(&config.replicaofHost, "replicaof", "", "start server in replica mode of given host and port")
+	flag.StringVar(&config.dir, "dir", "", "directory where RDB files are stored")
+	flag.StringVar(&config.dbfilename, "dbfilename", "", "name of the RDB file")
 	flag.Parse()
 
 	if len(config.replicaofHost) == 0 {
@@ -267,6 +271,13 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 		count, _ := strconv.Atoi(cmd[1])
 		timeout, _ := strconv.Atoi(cmd[2])
 		response = handleWait(count, timeout)
+	case "CONFIG":
+		switch cmd[2] {
+		case "dir":
+			response = encodeStringArray([]string{"dir", config.dir})
+		case "dbfilename":
+			response = encodeStringArray([]string{"dbfilename", config.dbfilename})
+		}
 	}
 	if isWrite {
 		propagate(cmd)
