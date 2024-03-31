@@ -18,6 +18,14 @@
             "mode": "auto",
             "program": "${fileDirname}",
             "args": ["--port", "6380", "--replicaof", "localhost", "6379"]
+        },
+        {
+            "name": "Launch with RDB",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${fileDirname}",
+            "args": ["--dir", "..", "--dbfilename", "dump.rdb"]
         }
     ]
 }
