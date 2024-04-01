@@ -494,15 +494,24 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 
 				if entry == nil {
 					if isBlocking {
-						fmt.Printf("Waiting for a write on stream %s...\n", streamKey)
 						waitForAdd := make(chan bool)
 						stream.blocked = append(stream.blocked, &waitForAdd)
-						timer := time.After(time.Duration(blockTimeout) * time.Millisecond)
-						select {
-						case <-waitForAdd:
-							// TODO: remove from stream.blocked
-						case <-timer:
-							// TODO: remove from stream.blocked
+						timedOut := false
+						if blockTimeout > 0 {
+							fmt.Printf("Waiting for a write on stream %s (timeout = %d ms)...\n", streamKey, blockTimeout)
+							timer := time.After(time.Duration(blockTimeout) * time.Millisecond)
+							select {
+							case <-waitForAdd:
+								timedOut = false
+							case <-timer:
+								timedOut = true
+							}
+						} else {
+							fmt.Printf("Waiting for a write on stream %s (no timeout!)...\n", streamKey)
+							<-waitForAdd
+						}
+						stream.blocked = slices.DeleteFunc(stream.blocked, func(ch *chan bool) bool { return ch == &waitForAdd })
+						if timedOut {
 							response = "$-1\r\n"
 							return
 						}
