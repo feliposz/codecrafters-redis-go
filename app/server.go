@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -36,7 +37,7 @@ type stream struct {
 
 type streamEntry struct {
 	id    [2]uint64
-	store map[string]string
+	store []string
 }
 
 var streams map[string]*stream
@@ -362,9 +363,50 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 		} else {
 			for i := 3; i < len(cmd); i += 2 {
 				key, value := cmd[i], cmd[i+1]
-				entry.store[key] = value
+				entry.store = append(entry.store, key, value)
 			}
 			response = encodeBulkString(fmt.Sprintf("%d-%d", entry.id[0], entry.id[1]))
+		}
+
+	case "XRANGE":
+		streamKey := cmd[1]
+		start := cmd[2]
+		end := cmd[3]
+
+		stream, exists := streams[streamKey]
+		if !exists || len(stream.entries) == 0 {
+			response = "*0\r\n"
+			return
+		}
+
+		startMs, startSeq, startHasSeq, _ := stream.splitId(start)
+		endMs, endSeq, endHasSeq, _ := stream.splitId(end)
+
+		if !startHasSeq {
+			startSeq = 0
+		}
+		if !endHasSeq {
+			endSeq = math.MaxUint64
+		}
+
+		startIndex := binarySearchEntries(stream.entries, startMs, startSeq, 0, len(stream.entries)-1)
+		endIndex := binarySearchEntries(stream.entries, endMs, endSeq, startIndex, len(stream.entries)-1)
+
+		if endIndex >= len(stream.entries) {
+			endIndex = len(stream.entries) - 1
+		}
+
+		// TODO: use a string builder
+		entriesCount := endIndex - startIndex + 1
+		response = fmt.Sprintf("*%d\r\n", entriesCount)
+		for index := startIndex; index <= endIndex; index++ {
+			entry := stream.entries[index]
+			id := fmt.Sprintf("%d-%d", entry.id[0], entry.id[1])
+			response += fmt.Sprintf("*2\r\n$%d\r\n%s\r\n", len(id), id)
+			response += fmt.Sprintf("*%d\r\n", len(entry.store))
+			for _, kv := range entry.store {
+				response += encodeBulkString(kv)
+			}
 		}
 	}
 
@@ -381,6 +423,19 @@ func newStream() *stream {
 		last:    [2]uint64{0, 0},
 		entries: make([]*streamEntry, 0),
 	}
+}
+
+func (s *stream) splitId(id string) (millisecondsTime, sequenceNumber uint64, hasSequence bool, err error) {
+	parts := strings.Split(id, "-")
+	millisecondsTime, err = strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return
+	}
+	if len(parts) > 1 {
+		sequenceNumber, err = strconv.ParseUint(parts[1], 10, 64)
+		hasSequence = true
+	}
+	return
 }
 
 func (s *stream) getNext(id string) (millisecondsTime, sequenceNumber uint64, err error) {
@@ -430,9 +485,29 @@ func (s *stream) addStreamEntry(id string) (*streamEntry, error) {
 	entry := new(streamEntry)
 	entry.id[0] = millisecondsTime
 	entry.id[1] = sequenceNumber
-	entry.store = make(map[string]string)
+	entry.store = make([]string, 0)
 	s.entries = append(s.entries, entry)
 	return entry, nil
+}
+
+func binarySearchEntries(entries []*streamEntry, targetMs, targetSeq uint64, lo, hi int) int {
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		entry := entries[mid]
+		if targetMs == entry.id[0] && targetSeq == entry.id[1] {
+			lo = mid
+			break
+		} else if targetMs == entry.id[0] && entry.id[1] > targetSeq {
+			hi = mid - 1
+		} else if targetMs == entry.id[0] && entry.id[1] < targetSeq {
+			lo = mid + 1
+		} else if targetMs < entry.id[0] {
+			hi = mid - 1
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo
 }
 
 func propagate(cmd []string) {
