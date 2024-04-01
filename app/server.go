@@ -347,20 +347,23 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "XADD":
 		streamKey := cmd[1]
 		id := cmd[2]
-		key := cmd[3]
-		value := cmd[4]
-		// TODO: handle multiple key/value pairs
+
+		// TODO: check parameters
 
 		stream, exists := streams[streamKey]
 		if !exists {
 			stream = newStream()
 			streams[streamKey] = stream
 		}
+
 		entry, err := stream.addStreamEntry(id)
 		if err != nil {
 			response = encodeError(err)
 		} else {
-			entry.store[key] = value
+			for i := 3; i < len(cmd); i += 2 {
+				key, value := cmd[i], cmd[i+1]
+				entry.store[key] = value
+			}
 			response = encodeBulkString(fmt.Sprintf("%d-%d", entry.id[0], entry.id[1]))
 		}
 	}
