@@ -238,6 +238,11 @@ func encodeInt(n int) string {
 	return fmt.Sprintf(":%d\r\n", n)
 }
 
+func encodeError(e error) string {
+	// TODO: handle error types...
+	return fmt.Sprintf("-ERR %s\r\n", e.Error())
+}
+
 func handleCommand(cmd []string) (response string, resynch bool) {
 	isWrite := false
 
@@ -344,16 +349,20 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 		id := cmd[2]
 		key := cmd[3]
 		value := cmd[4]
+		// TODO: handle multiple key/value pairs
 
 		stream, exists := streams[streamKey]
 		if !exists {
 			stream = newStream()
 			streams[streamKey] = stream
 		}
-		entry, _ := stream.addStreamEntry(id)
-		// TODO: handle errors
-		entry.store[key] = value
-		response = encodeBulkString(fmt.Sprintf("%d-%d", entry.id[0], entry.id[1]))
+		entry, err := stream.addStreamEntry(id)
+		if err != nil {
+			response = encodeError(err)
+		} else {
+			entry.store[key] = value
+			response = encodeBulkString(fmt.Sprintf("%d-%d", entry.id[0], entry.id[1]))
+		}
 	}
 
 	if isWrite {
@@ -380,6 +389,10 @@ func (s *stream) getNext(id string) (millisecondsTime, sequenceNumber uint64) {
 
 func (s *stream) addStreamEntry(id string) (*streamEntry, error) {
 	millisecondsTime, sequenceNumber := s.getNext(id)
+	if millisecondsTime == 0 && sequenceNumber == 0 {
+		return nil, fmt.Errorf("The ID specified in XADD must be greater than 0-0")
+	}
+
 	if s.first[0] == 0 && s.first[1] == 0 {
 		s.first[0], s.first[1] = millisecondsTime, sequenceNumber
 		s.last[0], s.last[1] = millisecondsTime, sequenceNumber
@@ -388,7 +401,7 @@ func (s *stream) addStreamEntry(id string) (*streamEntry, error) {
 	} else if millisecondsTime == s.last[0] && sequenceNumber > s.last[1] {
 		s.last[0], s.last[1] = millisecondsTime, sequenceNumber
 	} else {
-		return nil, fmt.Errorf("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+		return nil, fmt.Errorf("The ID specified in XADD is equal or smaller than the target stream top item")
 	}
 	entry := new(streamEntry)
 	entry.id[0] = millisecondsTime
