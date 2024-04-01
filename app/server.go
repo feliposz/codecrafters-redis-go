@@ -379,21 +379,29 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			return
 		}
 
-		startMs, startSeq, startHasSeq, _ := stream.splitId(start)
-		endMs, endSeq, endHasSeq, _ := stream.splitId(end)
+		var startIndex, endIndex int
 
-		if !startHasSeq {
-			startSeq = 0
+		if start == "-" {
+			startIndex = 0
+		} else {
+			startMs, startSeq, startHasSeq, _ := stream.splitId(start)
+			if !startHasSeq {
+				startSeq = 0
+			}
+			startIndex = binarySearchEntries(stream.entries, startMs, startSeq, 0, len(stream.entries)-1)
 		}
-		if !endHasSeq {
-			endSeq = math.MaxUint64
-		}
 
-		startIndex := binarySearchEntries(stream.entries, startMs, startSeq, 0, len(stream.entries)-1)
-		endIndex := binarySearchEntries(stream.entries, endMs, endSeq, startIndex, len(stream.entries)-1)
-
-		if endIndex >= len(stream.entries) {
+		if end == "+" {
 			endIndex = len(stream.entries) - 1
+		} else {
+			endMs, endSeq, endHasSeq, _ := stream.splitId(end)
+			if !endHasSeq {
+				endSeq = math.MaxUint64
+			}
+			endIndex = binarySearchEntries(stream.entries, endMs, endSeq, startIndex, len(stream.entries)-1)
+			if endIndex >= len(stream.entries) {
+				endIndex = len(stream.entries) - 1
+			}
 		}
 
 		// TODO: use a string builder
