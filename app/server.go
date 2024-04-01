@@ -209,6 +209,10 @@ func encodeBulkString(s string) string {
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
 }
 
+func encodeSimpleString(s string) string {
+	return fmt.Sprintf("+%s\r\n", s)
+}
+
 func encodeStringArray(arr []string) string {
 	result := fmt.Sprintf("*%d\r\n", len(arr))
 	for _, s := range arr {
@@ -223,9 +227,11 @@ func encodeInt(n int) string {
 
 func handleCommand(cmd []string) (response string, resynch bool) {
 	isWrite := false
+
 	switch strings.ToUpper(cmd[0]) {
 	case "COMMAND":
 		response = "+OK\r\n"
+
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
 		case "GETACK":
@@ -237,21 +243,26 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			// TODO: Implement proper replication
 			response = "+OK\r\n"
 		}
+
 	case "PSYNC":
 		if len(cmd) == 3 {
 			// TODO: Implement synch
 			response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", config.replid)
 			resynch = true
 		}
+
 	case "PING":
 		response = "+PONG\r\n"
+
 	case "ECHO":
 		response = encodeBulkString(cmd[1])
+
 	case "INFO":
 		if len(cmd) == 2 && strings.ToUpper(cmd[1]) == "REPLICATION" {
 			response = encodeBulkString(fmt.Sprintf("role:%s\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",
 				config.role, config.replid, config.replOffset))
 		}
+
 	case "SET":
 		isWrite = true
 		// TODO: check length
@@ -262,6 +273,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			ttl[key] = time.Now().Add(time.Millisecond * time.Duration(expiration))
 		}
 		response = "+OK\r\n"
+
 	case "GET":
 		// TODO: check length
 		key := cmd[1]
@@ -278,11 +290,13 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 		} else {
 			response = encodeBulkString("")
 		}
+
 	case "WAIT":
 		fmt.Println(cmd)
 		count, _ := strconv.Atoi(cmd[1])
 		timeout, _ := strconv.Atoi(cmd[2])
 		response = handleWait(count, timeout)
+
 	case "CONFIG":
 		switch cmd[2] {
 		case "dir":
@@ -290,16 +304,28 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 		case "dbfilename":
 			response = encodeStringArray([]string{"dbfilename", config.dbfilename})
 		}
+
 	case "KEYS":
 		keys := make([]string, 0, len(store))
 		for key := range store {
 			keys = append(keys, key)
 		}
 		response = encodeStringArray(keys)
+
+	case "TYPE":
+		key := cmd[1]
+		_, exists := store[key]
+		if exists {
+			response = encodeSimpleString("string")
+		} else {
+			response = encodeSimpleString("none")
+		}
 	}
+
 	if isWrite {
 		propagate(cmd)
 	}
+
 	return
 }
 
