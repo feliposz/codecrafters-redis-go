@@ -416,6 +416,60 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 				response += encodeBulkString(kv)
 			}
 		}
+
+	case "XREAD":
+		// TODO: check parameters
+		// NOTE: skipped "streams" keyword
+		streamKey := cmd[2]
+		start := cmd[3]
+
+		stream, exists := streams[streamKey]
+		if !exists || len(stream.entries) == 0 {
+			response = "*0\r\n"
+			return
+		}
+
+		startMs, startSeq, startHasSeq, _ := stream.splitId(start)
+		if !startHasSeq {
+			startSeq = 0
+		}
+		startIndex := binarySearchEntries(stream.entries, startMs, startSeq, 0, len(stream.entries)-1)
+
+		if startIndex >= len(stream.entries) {
+			response = "*0\r\n"
+			return
+		}
+
+		entry := stream.entries[startIndex]
+
+		// if found exact match, need to get the next one (xread bound is exclusive)
+		if entry.id[0] == startMs && entry.id[1] == startSeq {
+			if startIndex+1 >= len(stream.entries) {
+				response = "*0\r\n"
+				return
+			}
+			entry = stream.entries[startIndex+1]
+		}
+
+		// TODO: use a string builder
+
+		// single stream
+		response = fmt.Sprintf("*%d\r\n", 1)
+
+		// stream key + entry
+		response += fmt.Sprintf("*%d\r\n", 2)
+		response += encodeBulkString(streamKey)
+
+		// single entry (always ?)
+		response += fmt.Sprintf("*%d\r\n", 1)
+
+		id := fmt.Sprintf("%d-%d", entry.id[0], entry.id[1])
+		response += fmt.Sprintf("*2\r\n$%d\r\n%s\r\n", len(id), id)
+		response += fmt.Sprintf("*%d\r\n", len(entry.store))
+		for _, kv := range entry.store {
+			response += encodeBulkString(kv)
+		}
+
 	}
 
 	if isWrite {
