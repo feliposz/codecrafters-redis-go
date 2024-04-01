@@ -516,7 +516,7 @@ func readRDB(rdbPath string) error {
 				fmt.Printf("Aux: %s = %v\n", key, bits)
 			case "ctime":
 				ctime, _ := readEncodedInt(reader)
-				fmt.Printf("Aux: %s = %v\n", key, ctime)
+				fmt.Printf("Aux: %s = %v (%v)\n", key, ctime, time.Unix(int64(ctime), 0))
 			case "used-mem":
 				usedmem, _ := readEncodedInt(reader)
 				fmt.Printf("Aux: %s = %v\n", key, usedmem)
@@ -526,7 +526,7 @@ func readRDB(rdbPath string) error {
 				// reader.Read(preamble)
 				fmt.Printf("Aux: %s = %d\n", key, size)
 			default:
-				fmt.Printf("Unknown auxiliary field: %q\n", key)
+				return fmt.Errorf("unknown auxiliary field: %q", key)
 			}
 
 		case 0xFB: // Hash table sizes for the main keyspace and expires
@@ -540,9 +540,11 @@ func readRDB(rdbPath string) error {
 			fmt.Printf("Database Selector = %d\n", db)
 
 		case 0xFF: // End of the RDB file
+			// TODO: implement CRC?
 			eof = true
+
 		default:
-			fmt.Printf("Unknown op code: %d\n", opCode)
+			return fmt.Errorf("unknown op code: %x", opCode)
 		}
 
 		if startDataRead {
@@ -564,16 +566,18 @@ func readRDB(rdbPath string) error {
 					expiration = time.UnixMilli(int64(bytes[0]) | int64(bytes[1])<<8 | int64(bytes[2])<<16 | int64(bytes[3])<<24 |
 						int64(bytes[4])<<32 | int64(bytes[5])<<40 | int64(bytes[6])<<48 | int64(bytes[7])<<56)
 					valueType, err = reader.ReadByte()
+				} else if valueType == 0xFF {
+					startDataRead = false
+					reader.UnreadByte()
+					break
 				}
 
 				if err != nil {
 					return err
 				}
 
-				if valueType > 14 {
-					startDataRead = false
-					reader.UnreadByte()
-					break
+				if valueType != 0 {
+					return fmt.Errorf("value type not implemented: %x", valueType)
 				}
 
 				key, _ := readEncodedString(reader)
