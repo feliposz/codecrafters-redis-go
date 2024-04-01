@@ -385,6 +385,9 @@ func (s *stream) getNext(id string) (millisecondsTime, sequenceNumber uint64, er
 
 	if len(parts) == 1 && parts[0] == "*" {
 		millisecondsTime = uint64(time.Now().UnixMilli())
+		if millisecondsTime == s.last[0] {
+			sequenceNumber = s.last[1] + 1
+		}
 	} else if len(parts) == 2 && parts[1] == "*" {
 		millisecondsTime, _ = strconv.ParseUint(parts[0], 10, 64)
 		if millisecondsTime == s.last[0] {
