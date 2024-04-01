@@ -455,7 +455,6 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 
 		// TODO: use a string builder
 
-		// single stream
 		response = fmt.Sprintf("*%d\r\n", len(readParams))
 
 		for _, readParam := range readParams {
@@ -468,9 +467,16 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 
 			stream := streams[streamKey]
 
-			startMs, startSeq, startHasSeq, _ := stream.splitId(start)
-			if !startHasSeq {
-				startSeq = 0
+			var startMs, startSeq uint64
+			var startHasSeq bool
+
+			if start == "$" {
+				startMs, startSeq = stream.last[0], stream.last[1]
+			} else {
+				startMs, startSeq, startHasSeq, _ = stream.splitId(start)
+				if !startHasSeq {
+					startSeq = 0
+				}
 			}
 
 			var entry *streamEntry
