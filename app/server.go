@@ -28,6 +28,18 @@ type serverConfig struct {
 	dbfilename    string
 }
 
+type stream struct {
+	first   [2]uint64
+	last    [2]uint64
+	entries []*streamEntry
+}
+
+type streamEntry struct {
+	id    [2]uint64
+	store map[string]string
+}
+
+var streams map[string]*stream
 var store map[string]string
 var ttl map[string]time.Time
 var config serverConfig
@@ -60,6 +72,7 @@ func main() {
 
 	store = make(map[string]string)
 	ttl = make(map[string]time.Time)
+	streams = make(map[string]*stream)
 	ackReceived = make(chan bool)
 
 	if config.role == "slave" {
@@ -314,12 +327,33 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 
 	case "TYPE":
 		key := cmd[1]
-		_, exists := store[key]
+		_, exists := streams[key]
 		if exists {
-			response = encodeSimpleString("string")
+			response = encodeSimpleString("stream")
 		} else {
-			response = encodeSimpleString("none")
+			_, exists := store[key]
+			if exists {
+				response = encodeSimpleString("string")
+			} else {
+				response = encodeSimpleString("none")
+			}
 		}
+
+	case "XADD":
+		streamKey := cmd[1]
+		id := cmd[2]
+		key := cmd[3]
+		value := cmd[4]
+
+		stream, exists := streams[streamKey]
+		if !exists {
+			stream = newStream()
+			streams[streamKey] = stream
+		}
+		entry, _ := stream.addStreamEntry(id)
+		// TODO: handle errors
+		entry.store[key] = value
+		response = encodeBulkString(fmt.Sprintf("%d-%d", entry.id[0], entry.id[1]))
 	}
 
 	if isWrite {
@@ -327,6 +361,41 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	}
 
 	return
+}
+
+func newStream() *stream {
+	return &stream{
+		first:   [2]uint64{0, 0},
+		last:    [2]uint64{0, 0},
+		entries: make([]*streamEntry, 0),
+	}
+}
+
+func (s *stream) getNext(id string) (millisecondsTime, sequenceNumber uint64) {
+	parts := strings.Split(id, "-")
+	millisecondsTime, _ = strconv.ParseUint(parts[0], 10, 64)
+	sequenceNumber, _ = strconv.ParseUint(parts[1], 10, 64)
+	return
+}
+
+func (s *stream) addStreamEntry(id string) (*streamEntry, error) {
+	millisecondsTime, sequenceNumber := s.getNext(id)
+	if s.first[0] == 0 && s.first[1] == 0 {
+		s.first[0], s.first[1] = millisecondsTime, sequenceNumber
+		s.last[0], s.last[1] = millisecondsTime, sequenceNumber
+	} else if millisecondsTime > s.last[0] {
+		s.last[0], s.last[1] = millisecondsTime, sequenceNumber
+	} else if millisecondsTime == s.last[0] && sequenceNumber > s.last[1] {
+		s.last[0], s.last[1] = millisecondsTime, sequenceNumber
+	} else {
+		return nil, fmt.Errorf("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+	}
+	entry := new(streamEntry)
+	entry.id[0] = millisecondsTime
+	entry.id[1] = sequenceNumber
+	entry.store = make(map[string]string)
+	s.entries = append(s.entries, entry)
+	return entry, nil
 }
 
 func propagate(cmd []string) {
