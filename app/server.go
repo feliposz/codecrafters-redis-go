@@ -420,56 +420,69 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "XREAD":
 		// TODO: check parameters
 		// NOTE: skipped "streams" keyword
-		streamKey := cmd[2]
-		start := cmd[3]
 
-		stream, exists := streams[streamKey]
-		if !exists || len(stream.entries) == 0 {
-			response = "*0\r\n"
-			return
-		}
+		readParams := []struct{ key, start string }{}
+		// NOTE: -2 because of "xread streams"
+		readCount := (len(cmd) - 2) / 2
+		readKeyIndex := 2
+		readStartIndex := readKeyIndex + readCount
 
-		startMs, startSeq, startHasSeq, _ := stream.splitId(start)
-		if !startHasSeq {
-			startSeq = 0
-		}
-		startIndex := binarySearchEntries(stream.entries, startMs, startSeq, 0, len(stream.entries)-1)
+		for i := 0; i < readCount; i++ {
+			streamKey := cmd[i+readKeyIndex]
+			start := cmd[i+readStartIndex]
 
-		if startIndex >= len(stream.entries) {
-			response = "*0\r\n"
-			return
-		}
-
-		entry := stream.entries[startIndex]
-
-		// if found exact match, need to get the next one (xread bound is exclusive)
-		if entry.id[0] == startMs && entry.id[1] == startSeq {
-			if startIndex+1 >= len(stream.entries) {
-				response = "*0\r\n"
-				return
+			_, exists := streams[streamKey]
+			if exists {
+				readParams = append(readParams, struct{ key, start string }{streamKey, start})
 			}
-			entry = stream.entries[startIndex+1]
 		}
 
 		// TODO: use a string builder
 
 		// single stream
-		response = fmt.Sprintf("*%d\r\n", 1)
+		response = fmt.Sprintf("*%d\r\n", len(readParams))
 
-		// stream key + entry
-		response += fmt.Sprintf("*%d\r\n", 2)
-		response += encodeBulkString(streamKey)
+		for _, readParam := range readParams {
 
-		// single entry (always ?)
-		response += fmt.Sprintf("*%d\r\n", 1)
+			streamKey, start := readParam.key, readParam.start
 
-		id := fmt.Sprintf("%d-%d", entry.id[0], entry.id[1])
-		response += fmt.Sprintf("*2\r\n$%d\r\n%s\r\n", len(id), id)
-		response += fmt.Sprintf("*%d\r\n", len(entry.store))
-		for _, kv := range entry.store {
-			response += encodeBulkString(kv)
+			// stream key + entry (below)
+			response += fmt.Sprintf("*%d\r\n", 2)
+			response += encodeBulkString(streamKey)
+
+			stream := streams[streamKey]
+
+			startMs, startSeq, startHasSeq, _ := stream.splitId(start)
+			if !startHasSeq {
+				startSeq = 0
+			}
+			startIndex := binarySearchEntries(stream.entries, startMs, startSeq, 0, len(stream.entries)-1)
+
+			if startIndex >= len(stream.entries) {
+				response += "*0\r\n"
+				continue
+			}
+
+			entry := stream.entries[startIndex]
+
+			// if found exact match, need to get the next one (xread bound is exclusive)
+			if entry.id[0] == startMs && entry.id[1] == startSeq {
+				if startIndex+1 >= len(stream.entries) {
+					response += "*0\r\n"
+					continue
+				}
+				entry = stream.entries[startIndex+1]
+			}
+
+			// single entry
+			response += "*1\r\n"
+			id := fmt.Sprintf("%d-%d", entry.id[0], entry.id[1])
+			response += fmt.Sprintf("*2\r\n$%d\r\n%s\r\n", len(id), id)
+			response += fmt.Sprintf("*%d\r\n", len(entry.store))
+			for _, kv := range entry.store {
+				response += encodeBulkString(kv)
+			}
 		}
-
 	}
 
 	if isWrite {
