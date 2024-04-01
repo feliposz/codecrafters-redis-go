@@ -33,6 +33,7 @@ type stream struct {
 	first   [2]uint64
 	last    [2]uint64
 	entries []*streamEntry
+	blocked []*chan bool
 }
 
 type streamEntry struct {
@@ -40,6 +41,7 @@ type streamEntry struct {
 	store []string
 }
 
+// TODO: add some mutexes around these...
 var streams map[string]*stream
 var store map[string]string
 var ttl map[string]time.Time
@@ -368,6 +370,11 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			response = encodeBulkString(fmt.Sprintf("%d-%d", entry.id[0], entry.id[1]))
 		}
 
+		// notify blocked reads
+		for _, ch := range stream.blocked {
+			*ch <- true
+		}
+
 	case "XRANGE":
 		streamKey := cmd[1]
 		start := cmd[2]
@@ -419,14 +426,23 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 
 	case "XREAD":
 		// TODO: check parameters
-		// NOTE: skipped "streams" keyword
 
-		readParams := []struct{ key, start string }{}
-		// NOTE: -2 because of "xread streams"
-		readCount := (len(cmd) - 2) / 2
+		// NOTE: skipped "xread streams"
 		readKeyIndex := 2
+
+		isBlocking := false
+		blockTimeout := 0
+		if cmd[1] == "block" {
+			isBlocking = true
+			blockTimeout, _ = strconv.Atoi(cmd[2])
+			readKeyIndex += 2
+		}
+		_ = blockTimeout
+
+		readCount := (len(cmd) - readKeyIndex) / 2
 		readStartIndex := readKeyIndex + readCount
 
+		readParams := []struct{ key, start string }{}
 		for i := 0; i < readCount; i++ {
 			streamKey := cmd[i+readKeyIndex]
 			start := cmd[i+readStartIndex]
@@ -456,22 +472,49 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			if !startHasSeq {
 				startSeq = 0
 			}
-			startIndex := binarySearchEntries(stream.entries, startMs, startSeq, 0, len(stream.entries)-1)
 
-			if startIndex >= len(stream.entries) {
-				response += "*0\r\n"
-				continue
+			var entry *streamEntry
+			var startIndex int
+
+			for entry == nil {
+				startIndex = binarySearchEntries(stream.entries, startMs, startSeq, startIndex, len(stream.entries)-1)
+
+				if startIndex < len(stream.entries) {
+					entry = stream.entries[startIndex]
+				}
+
+				// if found exact match, need to get the next one (xread bound is exclusive)
+				if entry != nil && entry.id[0] == startMs && entry.id[1] == startSeq {
+					if startIndex+1 < len(stream.entries) {
+						entry = stream.entries[startIndex+1]
+					} else {
+						entry = nil
+					}
+				}
+
+				if entry == nil {
+					if isBlocking {
+						fmt.Printf("Waiting for a write on stream %s...\n", streamKey)
+						waitForAdd := make(chan bool)
+						stream.blocked = append(stream.blocked, &waitForAdd)
+						timer := time.After(time.Duration(blockTimeout) * time.Millisecond)
+						select {
+						case <-waitForAdd:
+							// TODO: remove from stream.blocked
+						case <-timer:
+							// TODO: remove from stream.blocked
+							response = "$-1\r\n"
+							return
+						}
+					} else {
+						break
+					}
+				}
 			}
 
-			entry := stream.entries[startIndex]
-
-			// if found exact match, need to get the next one (xread bound is exclusive)
-			if entry.id[0] == startMs && entry.id[1] == startSeq {
-				if startIndex+1 >= len(stream.entries) {
-					response += "*0\r\n"
-					continue
-				}
-				entry = stream.entries[startIndex+1]
+			if entry == nil {
+				response = "*0\r\n"
+				return
 			}
 
 			// single entry
@@ -497,6 +540,7 @@ func newStream() *stream {
 		first:   [2]uint64{0, 0},
 		last:    [2]uint64{0, 0},
 		entries: make([]*streamEntry, 0),
+		blocked: make([]*chan bool, 0),
 	}
 }
 
