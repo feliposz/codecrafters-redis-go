@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -104,37 +105,13 @@ func (srv *serverState) handlePropagation(reader *bufio.Reader, masterConn net.C
 	defer masterConn.Close()
 
 	for {
-		cmd := []string{}
-		var arrSize, strSize, cmdSize int
-		for {
-			token, err := reader.ReadString('\n')
-			if err != nil {
-				return
-			}
-			// HACK: should count bytes properly?
-			cmdSize += len(token)
-			token = strings.TrimRight(token, "\r\n")
-			// TODO: do proper RESP parsing!!!
-			switch {
-			case arrSize == 0 && token[0] == '*':
-				arrSize, _ = strconv.Atoi(token[1:])
-			case strSize == 0 && token[0] == '$':
-				strSize, _ = strconv.Atoi(token[1:])
-			default:
-				if len(token) != strSize {
-					fmt.Printf("[from master] Wrong string size - got: %d, want: %d\n", len(token), strSize)
-					break
-				}
-				arrSize--
-				strSize = 0
-				cmd = append(cmd, token)
-			}
-			if arrSize == 0 {
+		cmd, cmdSize, err := decodeStringArray(reader)
+		if err != nil {
+			if err == io.EOF {
 				break
 			}
+			fmt.Printf("Error decoding command from master: %v\n", err.Error())
 		}
-
-		// TODO: handle scanner errors
 
 		if len(cmd) == 0 {
 			break
@@ -142,9 +119,9 @@ func (srv *serverState) handlePropagation(reader *bufio.Reader, masterConn net.C
 
 		fmt.Printf("[from master] Command = %q\n", cmd)
 		response, _ := srv.handleCommand(cmd)
-		//fmt.Printf("response = %q\n", response)
+
+		// REPLCONF ACK is the only response that a replica send back to master
 		if strings.ToUpper(cmd[0]) == "REPLCONF" {
-			//fmt.Printf("ack = %q\n", cmd)
 			_, err := masterConn.Write([]byte(response))
 			if err != nil {
 				fmt.Printf("Error responding to master: %v\n", err.Error())

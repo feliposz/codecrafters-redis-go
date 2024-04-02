@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -108,35 +109,17 @@ func (srv *serverState) start() {
 func (srv *serverState) serveClient(id int, conn net.Conn) {
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
-	scanner := bufio.NewScanner(conn)
+	//scanner := bufio.NewScanner(conn)
+	reader := bufio.NewReader(conn)
 
 	for {
-		cmd := []string{}
-		var arrSize, strSize int
-		fmt.Printf("[%d] Waiting command\n", id)
-		for scanner.Scan() {
-			token := scanner.Text()
-			//fmt.Printf("[%d] Token: %q\n", id, token)
-			switch {
-			case arrSize == 0 && token[0] == '*':
-				arrSize, _ = strconv.Atoi(token[1:])
-			case strSize == 0 && token[0] == '$':
-				strSize, _ = strconv.Atoi(token[1:])
-			default:
-				if len(token) != strSize {
-					fmt.Printf("[#%d] Wrong string size - got: %d, want: %d\n", id, len(token), strSize)
-					break
-				}
-				arrSize--
-				strSize = 0
-				cmd = append(cmd, token)
-			}
-			if arrSize == 0 {
+		cmd, _, err := decodeStringArray(reader)
+		if err != nil {
+			if err == io.EOF {
 				break
 			}
+			fmt.Printf("[%d] Error decoding command: %v\n", id, err.Error())
 		}
-
-		// TODO: handle scanner errors
 
 		if len(cmd) == 0 {
 			break
