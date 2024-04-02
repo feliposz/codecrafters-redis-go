@@ -48,15 +48,20 @@ type replica struct {
 }
 
 // TODO: add some mutexes around these...
-var streams map[string]*stream
-var store map[string]string
-var ttl map[string]time.Time
-var config serverConfig
-var replicas []replica
-var replicaOffset int
-var ackReceived chan bool
+
+type serverState struct {
+	streams       map[string]*stream
+	store         map[string]string
+	ttl           map[string]time.Time
+	config        serverConfig
+	replicas      []replica
+	replicaOffset int
+	ackReceived   chan bool
+}
 
 func main() {
+
+	var config serverConfig
 
 	flag.IntVar(&config.port, "port", 6379, "listen on specified port")
 	flag.StringVar(&config.replicaofHost, "replicaof", "", "start server in replica mode of given host and port")
@@ -79,61 +84,37 @@ func main() {
 		}
 	}
 
-	store = make(map[string]string)
-	ttl = make(map[string]time.Time)
-	streams = make(map[string]*stream)
-	ackReceived = make(chan bool)
+	srv := newServer(config)
 
-	if config.role == "slave" {
-		masterConn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", config.replicaofHost, config.replicaofPort))
-		if err != nil {
-			fmt.Printf("Failed to connect to master %v\n", err)
-			os.Exit(1)
-		}
-		defer masterConn.Close()
+	srv.start()
+}
 
-		// TODO: check responses
-		reader := bufio.NewReader(masterConn)
-		masterConn.Write([]byte(encodeStringArray([]string{"PING"})))
-		reader.ReadString('\n')
-		masterConn.Write([]byte(encodeStringArray([]string{"REPLCONF", "listening-port", strconv.Itoa(config.port)})))
-		reader.ReadString('\n')
-		masterConn.Write([]byte(encodeStringArray([]string{"REPLCONF", "capa", "psync2"})))
-		reader.ReadString('\n')
-		masterConn.Write([]byte(encodeStringArray([]string{"PSYNC", "?", "-1"})))
-		reader.ReadString('\n')
+func newServer(config serverConfig) *serverState {
+	var srv serverState
+	srv.store = make(map[string]string)
+	srv.ttl = make(map[string]time.Time)
+	srv.streams = make(map[string]*stream)
+	srv.ackReceived = make(chan bool)
+	srv.config = config
+	return &srv
+}
 
-		// receiving RDB (ignoring it for now)
-		response, _ := reader.ReadString('\n')
-		if response[0] != '$' {
-			fmt.Printf("Invalid response\n")
-			os.Exit(1)
-		}
-		rdbSize, _ := strconv.Atoi(response[1 : len(response)-2])
-		buffer := make([]byte, rdbSize)
-		receivedSize, err := reader.Read(buffer)
-		if err != nil {
-			fmt.Printf("Invalid RDB received %v\n", err)
-			os.Exit(1)
-		}
-		if rdbSize != receivedSize {
-			fmt.Printf("Size mismatch - got: %d, want: %d\n", receivedSize, rdbSize)
-		}
-
-		go handlePropagation(reader, masterConn)
+func (srv *serverState) start() {
+	if srv.config.role == "slave" {
+		srv.replicaHandshake()
 	}
 
-	if len(config.dir) > 0 && len(config.dbfilename) > 0 {
-		rdbPath := filepath.Join(config.dir, config.dbfilename)
-		err := readRDB(rdbPath)
+	if len(srv.config.dir) > 0 && len(srv.config.dbfilename) > 0 {
+		rdbPath := filepath.Join(srv.config.dir, srv.config.dbfilename)
+		err := readRDB(rdbPath, srv.store, srv.ttl)
 		if err != nil {
 			fmt.Printf("Failed to load '%s': %v\n", rdbPath, err)
 		}
 	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.port))
+	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", srv.config.port))
 	if err != nil {
-		fmt.Printf("Failed to bind to port %d\n", config.port)
+		fmt.Printf("Failed to bind to port %d\n", srv.config.port)
 		os.Exit(1)
 	}
 	fmt.Println("Listening on: ", listener.Addr().String())
@@ -144,8 +125,46 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go serveClient(id, conn)
+		go srv.serveClient(id, conn)
 	}
+}
+
+func (srv *serverState) replicaHandshake() {
+	masterConn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", srv.config.replicaofHost, srv.config.replicaofPort))
+	if err != nil {
+		fmt.Printf("Failed to connect to master %v\n", err)
+		os.Exit(1)
+	}
+
+	// TODO: check responses
+	reader := bufio.NewReader(masterConn)
+	masterConn.Write([]byte(encodeStringArray([]string{"PING"})))
+	reader.ReadString('\n')
+	masterConn.Write([]byte(encodeStringArray([]string{"REPLCONF", "listening-port", strconv.Itoa(srv.config.port)})))
+	reader.ReadString('\n')
+	masterConn.Write([]byte(encodeStringArray([]string{"REPLCONF", "capa", "psync2"})))
+	reader.ReadString('\n')
+	masterConn.Write([]byte(encodeStringArray([]string{"PSYNC", "?", "-1"})))
+	reader.ReadString('\n')
+
+	// receiving RDB (ignoring it for now)
+	response, _ := reader.ReadString('\n')
+	if response[0] != '$' {
+		fmt.Printf("Invalid response\n")
+		os.Exit(1)
+	}
+	rdbSize, _ := strconv.Atoi(response[1 : len(response)-2])
+	buffer := make([]byte, rdbSize)
+	receivedSize, err := reader.Read(buffer)
+	if err != nil {
+		fmt.Printf("Invalid RDB received %v\n", err)
+		os.Exit(1)
+	}
+	if rdbSize != receivedSize {
+		fmt.Printf("Size mismatch - got: %d, want: %d\n", receivedSize, rdbSize)
+	}
+
+	go srv.handlePropagation(reader, masterConn)
 }
 
 func randReplid() string {
@@ -158,7 +177,7 @@ func randReplid() string {
 	return string(result)
 }
 
-func serveClient(id int, conn net.Conn) {
+func (srv *serverState) serveClient(id int, conn net.Conn) {
 	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
 
 	scanner := bufio.NewScanner(conn)
@@ -196,7 +215,7 @@ func serveClient(id int, conn net.Conn) {
 		}
 
 		fmt.Printf("[#%d] Command = %q\n", id, cmd)
-		response, resynch := handleCommand(cmd)
+		response, resynch := srv.handleCommand(cmd)
 
 		if len(response) > 0 {
 			bytesSent, err := conn.Write([]byte(response))
@@ -215,7 +234,7 @@ func serveClient(id int, conn net.Conn) {
 			conn.Write([]byte(fmt.Sprintf("$%d\r\n", len(buffer))))
 			conn.Write(buffer)
 			fmt.Printf("[#%d] full resynch sent: %d\n", id, len(buffer))
-			replicas = append(replicas, replica{conn, 0, 0})
+			srv.replicas = append(srv.replicas, replica{conn, 0, 0})
 			return
 		}
 	}
@@ -252,7 +271,7 @@ func encodeError(e error) string {
 	return fmt.Sprintf("-ERR %s\r\n", e.Error())
 }
 
-func handleCommand(cmd []string) (response string, resynch bool) {
+func (srv *serverState) handleCommand(cmd []string) (response string, resynch bool) {
 	isWrite := false
 
 	switch strings.ToUpper(cmd[0]) {
@@ -262,9 +281,9 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
 		case "GETACK":
-			response = encodeStringArray([]string{"REPLCONF", "ACK", strconv.Itoa(replicaOffset)})
+			response = encodeStringArray([]string{"REPLCONF", "ACK", strconv.Itoa(srv.replicaOffset)})
 		case "ACK":
-			ackReceived <- true
+			srv.ackReceived <- true
 			response = ""
 		default:
 			// TODO: Implement proper replication
@@ -274,7 +293,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "PSYNC":
 		if len(cmd) == 3 {
 			// TODO: Implement synch
-			response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", config.replid)
+			response = fmt.Sprintf("+FULLRESYNC %s 0\r\n", srv.config.replid)
 			resynch = true
 		}
 
@@ -287,31 +306,31 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "INFO":
 		if len(cmd) == 2 && strings.ToUpper(cmd[1]) == "REPLICATION" {
 			response = encodeBulkString(fmt.Sprintf("role:%s\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",
-				config.role, config.replid, config.replOffset))
+				srv.config.role, srv.config.replid, srv.config.replOffset))
 		}
 
 	case "SET":
 		isWrite = true
 		// TODO: check length
 		key, value := cmd[1], cmd[2]
-		store[key] = value
+		srv.store[key] = value
 		if len(cmd) == 5 && strings.ToUpper(cmd[3]) == "PX" {
 			expiration, _ := strconv.Atoi(cmd[4])
-			ttl[key] = time.Now().Add(time.Millisecond * time.Duration(expiration))
+			srv.ttl[key] = time.Now().Add(time.Millisecond * time.Duration(expiration))
 		}
 		response = "+OK\r\n"
 
 	case "GET":
 		// TODO: check length
 		key := cmd[1]
-		value, ok := store[key]
+		value, ok := srv.store[key]
 		if ok {
-			expiration, exists := ttl[key]
+			expiration, exists := srv.ttl[key]
 			if !exists || expiration.After(time.Now()) {
 				response = encodeBulkString(value)
 			} else if exists {
-				delete(ttl, key)
-				delete(store, key)
+				delete(srv.ttl, key)
+				delete(srv.store, key)
 				response = encodeBulkString("")
 			}
 		} else {
@@ -321,30 +340,30 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	case "WAIT":
 		count, _ := strconv.Atoi(cmd[1])
 		timeout, _ := strconv.Atoi(cmd[2])
-		response = handleWait(count, timeout)
+		response = srv.handleWait(count, timeout)
 
 	case "CONFIG":
 		switch cmd[2] {
 		case "dir":
-			response = encodeStringArray([]string{"dir", config.dir})
+			response = encodeStringArray([]string{"dir", srv.config.dir})
 		case "dbfilename":
-			response = encodeStringArray([]string{"dbfilename", config.dbfilename})
+			response = encodeStringArray([]string{"dbfilename", srv.config.dbfilename})
 		}
 
 	case "KEYS":
-		keys := make([]string, 0, len(store))
-		for key := range store {
+		keys := make([]string, 0, len(srv.store))
+		for key := range srv.store {
 			keys = append(keys, key)
 		}
 		response = encodeStringArray(keys)
 
 	case "TYPE":
 		key := cmd[1]
-		_, exists := streams[key]
+		_, exists := srv.streams[key]
 		if exists {
 			response = encodeSimpleString("stream")
 		} else {
-			_, exists := store[key]
+			_, exists := srv.store[key]
 			if exists {
 				response = encodeSimpleString("string")
 			} else {
@@ -358,10 +377,10 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 
 		// TODO: check parameters
 
-		stream, exists := streams[streamKey]
+		stream, exists := srv.streams[streamKey]
 		if !exists {
 			stream = newStream()
-			streams[streamKey] = stream
+			srv.streams[streamKey] = stream
 		}
 
 		entry, err := stream.addStreamEntry(id)
@@ -385,7 +404,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 		start := cmd[2]
 		end := cmd[3]
 
-		stream, exists := streams[streamKey]
+		stream, exists := srv.streams[streamKey]
 		if !exists || len(stream.entries) == 0 {
 			response = "*0\r\n"
 			return
@@ -452,7 +471,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			streamKey := cmd[i+readKeyIndex]
 			start := cmd[i+readStartIndex]
 
-			_, exists := streams[streamKey]
+			_, exists := srv.streams[streamKey]
 			if exists {
 				readParams = append(readParams, struct{ key, start string }{streamKey, start})
 			}
@@ -470,7 +489,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 			response += fmt.Sprintf("*%d\r\n", 2)
 			response += encodeBulkString(streamKey)
 
-			stream := streams[streamKey]
+			stream := srv.streams[streamKey]
 
 			var startMs, startSeq uint64
 			var startHasSeq bool
@@ -549,7 +568,7 @@ func handleCommand(cmd []string) (response string, resynch bool) {
 	}
 
 	if isWrite {
-		propagate(cmd)
+		propagate(srv.replicas, cmd)
 	}
 
 	return
@@ -649,7 +668,7 @@ func binarySearchEntries(entries []*streamEntry, targetMs, targetSeq uint64, lo,
 	return lo
 }
 
-func propagate(cmd []string) {
+func propagate(replicas []replica, cmd []string) {
 	if len(replicas) == 0 {
 		return
 	}
@@ -671,15 +690,15 @@ func propagate(cmd []string) {
 	}
 }
 
-func handleWait(count, timeout int) string {
+func (srv *serverState) handleWait(count, timeout int) string {
 	getAckCmd := []byte(encodeStringArray([]string{"REPLCONF", "GETACK", "*"}))
 
 	acks := 0
 
-	for i := 0; i < len(replicas); i++ {
-		if replicas[i].offset > 0 {
-			bytesWritten, _ := replicas[i].conn.Write(getAckCmd)
-			replicas[i].offset += bytesWritten
+	for i := 0; i < len(srv.replicas); i++ {
+		if srv.replicas[i].offset > 0 {
+			bytesWritten, _ := srv.replicas[i].conn.Write(getAckCmd)
+			srv.replicas[i].offset += bytesWritten
 			go func(conn net.Conn) {
 				fmt.Println("waiting response from replica", conn.RemoteAddr().String())
 				buffer := make([]byte, 1024)
@@ -690,8 +709,8 @@ func handleWait(count, timeout int) string {
 				} else {
 					fmt.Println("error from replica", conn.RemoteAddr().String(), " => ", err.Error())
 				}
-				ackReceived <- true
-			}(replicas[i].conn)
+				srv.ackReceived <- true
+			}(srv.replicas[i].conn)
 		} else {
 			acks++
 		}
@@ -702,7 +721,7 @@ func handleWait(count, timeout int) string {
 outer:
 	for acks < count {
 		select {
-		case <-ackReceived:
+		case <-srv.ackReceived:
 			acks++
 			fmt.Println("acks =", acks)
 		case <-timer:
@@ -714,14 +733,9 @@ outer:
 	return encodeInt(acks)
 }
 
-func CHEAT_handleWait(count, timeout int) string {
-	fmt.Printf("Wait count=%d timeout=%d\n", count, timeout)
-	propagate([]string{"REPLCONF", "GETACK", "*"})
+func (srv *serverState) handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
+	defer masterConn.Close()
 
-	return encodeInt(len(replicas))
-}
-
-func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 	for {
 		cmd := []string{}
 		var arrSize, strSize, cmdSize int
@@ -760,7 +774,7 @@ func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 		}
 
 		fmt.Printf("[from master] Command = %q\n", cmd)
-		response, _ := handleCommand(cmd)
+		response, _ := srv.handleCommand(cmd)
 		//fmt.Printf("response = %q\n", response)
 		if strings.ToUpper(cmd[0]) == "REPLCONF" {
 			//fmt.Printf("ack = %q\n", cmd)
@@ -770,7 +784,7 @@ func handlePropagation(reader *bufio.Reader, masterConn net.Conn) {
 				break
 			}
 		}
-		replicaOffset += cmdSize
+		srv.replicaOffset += cmdSize
 	}
 }
 
@@ -833,7 +847,7 @@ func readEncodedString(reader *bufio.Reader) (string, error) {
 	return string(data), nil
 }
 
-func readRDB(rdbPath string) error {
+func readRDB(rdbPath string, store map[string]string, ttl map[string]time.Time) error {
 	file, err := os.Open(rdbPath)
 	if err != nil {
 		return err
