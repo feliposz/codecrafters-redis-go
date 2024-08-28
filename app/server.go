@@ -221,6 +221,9 @@ func (srv *serverState) handleCommand(cmd []string) (response string, resynch bo
 	case "MULTI":
 		response = "+OK\r\n"
 
+	case "EXEC":
+		response = encodeError(fmt.Errorf("EXEC without MULTI"))
+
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
 		case "GETACK":
