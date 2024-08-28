@@ -204,10 +204,14 @@ func (srv *serverState) handleCommand(cmd []string) (response string, resynch bo
 		isWrite = true
 		key := cmd[1]
 		if curr, found := srv.store[key]; found {
-			value, _ := strconv.Atoi(curr)
-			value++
-			srv.store[key] = strconv.Itoa(value)
-			response = encodeInt(value)
+			value, err := strconv.Atoi(curr)
+			if err != nil {
+				response = encodeError(fmt.Errorf("value is not an integer or out of range"))
+			} else {
+				value++
+				srv.store[key] = strconv.Itoa(value)
+				response = encodeInt(value)
+			}
 		} else {
 			value := 1
 			srv.store[key] = strconv.Itoa(value)
