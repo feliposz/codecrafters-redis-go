@@ -36,6 +36,13 @@ type serverState struct {
 	ackReceived   chan bool
 }
 
+type clientState struct {
+	server *serverState
+	id     int
+	conn   net.Conn
+	multi  bool
+}
+
 func main() {
 
 	var config serverConfig
@@ -71,6 +78,14 @@ func newServer(config serverConfig) *serverState {
 	return &srv
 }
 
+func newClient(server *serverState, id int, conn net.Conn) *clientState {
+	var client clientState
+	client.server = server
+	client.id = id
+	client.conn = conn
+	return &client
+}
+
 func (srv *serverState) start() {
 	if srv.config.role == "slave" {
 		srv.replicaHandshake()
@@ -97,15 +112,16 @@ func (srv *serverState) start() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go srv.serveClient(id, conn)
+		client := newClient(srv, id, conn)
+		go client.serve()
 	}
 }
 
-func (srv *serverState) serveClient(id int, conn net.Conn) {
-	fmt.Printf("[#%d] Client connected: %v\n", id, conn.RemoteAddr().String())
+func (cli *clientState) serve() {
+	fmt.Printf("[#%d] Client connected: %v\n", cli.id, cli.conn.RemoteAddr().String())
 
 	//scanner := bufio.NewScanner(conn)
-	reader := bufio.NewReader(conn)
+	reader := bufio.NewReader(cli.conn)
 
 	for {
 		cmd, _, err := decodeStringArray(reader)
@@ -113,39 +129,39 @@ func (srv *serverState) serveClient(id int, conn net.Conn) {
 			if err == io.EOF {
 				break
 			}
-			fmt.Printf("[%d] Error decoding command: %v\n", id, err.Error())
+			fmt.Printf("[%d] Error decoding command: %v\n", cli.id, err.Error())
 		}
 
 		if len(cmd) == 0 {
 			break
 		}
 
-		fmt.Printf("[#%d] Command = %q\n", id, cmd)
-		response, resynch := srv.handleCommand(cmd)
+		fmt.Printf("[#%d] Command = %q\n", cli.id, cmd)
+		response, resynch := cli.server.handleCommand(cmd, cli)
 
 		if len(response) > 0 {
-			bytesSent, err := conn.Write([]byte(response))
+			bytesSent, err := cli.conn.Write([]byte(response))
 			if err != nil {
-				fmt.Printf("[#%d] Error writing response: %v\n", id, err.Error())
+				fmt.Printf("[#%d] Error writing response: %v\n", cli.id, err.Error())
 				break
 			}
-			fmt.Printf("[#%d] Bytes sent: %d %q\n", id, bytesSent, response)
+			fmt.Printf("[#%d] Bytes sent: %d %q\n", cli.id, bytesSent, response)
 		}
 
 		if resynch {
-			size := sendFullResynch(conn)
-			fmt.Printf("[#%d] full resynch sent: %d\n", id, size)
-			srv.replicas = append(srv.replicas, replica{conn, 0, 0})
-			fmt.Printf("[#%d] Client promoted to replica\n", id)
+			size := sendFullResynch(cli.conn)
+			fmt.Printf("[#%d] full resynch sent: %d\n", cli.id, size)
+			cli.server.replicas = append(cli.server.replicas, replica{cli.conn, 0, 0})
+			fmt.Printf("[#%d] Client promoted to replica\n", cli.id)
 			return
 		}
 	}
 
-	fmt.Printf("[#%d] Client closing\n", id)
-	conn.Close()
+	fmt.Printf("[#%d] Client closing\n", cli.id)
+	cli.conn.Close()
 }
 
-func (srv *serverState) handleCommand(cmd []string) (response string, resynch bool) {
+func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response string, resynch bool) {
 	isWrite := false
 
 	switch strings.ToUpper(cmd[0]) {
@@ -219,10 +235,16 @@ func (srv *serverState) handleCommand(cmd []string) (response string, resynch bo
 		}
 
 	case "MULTI":
+		cli.multi = true
 		response = "+OK\r\n"
 
 	case "EXEC":
-		response = encodeError(fmt.Errorf("EXEC without MULTI"))
+		if cli.multi {
+			response = encodeStringArray(nil)
+			cli.multi = false
+		} else {
+			response = encodeError(fmt.Errorf("EXEC without MULTI"))
+		}
 
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
