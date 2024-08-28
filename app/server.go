@@ -51,14 +51,9 @@ func main() {
 		config.replid = randReplid()
 	} else {
 		config.role = "slave"
-		switch flag.NArg() {
-		case 0:
-			config.replicaofPort = 6379
-		case 1:
-			config.replicaofPort, _ = strconv.Atoi(flag.Arg(0))
-		default:
-			flag.Usage()
-		}
+		parts := strings.Split(config.replicaofHost, " ")
+		config.replicaofHost = parts[0]
+		config.replicaofPort, _ = strconv.Atoi(parts[1])
 	}
 
 	srv := newServer(config)
