@@ -153,6 +153,14 @@ func (cli *clientState) serve() {
 			} else {
 				response = encodeError(fmt.Errorf("EXEC without MULTI"))
 			}
+		} else if cmd[0] == "DISCARD" {
+			if cli.multi {
+				response = encodeSimpleString("OK")
+				cli.queue = nil
+				cli.multi = false
+			} else {
+				response = encodeError(fmt.Errorf("DISCARD without MULTI"))
+			}
 		} else if cli.multi {
 			cli.queue = append(cli.queue, cmd)
 			response := encodeSimpleString("QUEUED")
