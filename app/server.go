@@ -218,6 +218,9 @@ func (srv *serverState) handleCommand(cmd []string) (response string, resynch bo
 			response = encodeInt(value)
 		}
 
+	case "MULTI":
+		response = "+OK\r\n"
+
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
 		case "GETACK":
