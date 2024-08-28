@@ -136,6 +136,17 @@ func (cli *clientState) serve() {
 			break
 		}
 
+		if cli.multi && cmd[0] != "EXEC" {
+			response := encodeSimpleString("QUEUED")
+			bytesSent, err := cli.conn.Write([]byte(response))
+			if err != nil {
+				fmt.Printf("[#%d] Error writing response: %v\n", cli.id, err.Error())
+				break
+			}
+			fmt.Printf("[#%d] Bytes sent: %d %q\n", cli.id, bytesSent, response)
+			continue
+		}
+
 		fmt.Printf("[#%d] Command = %q\n", cli.id, cmd)
 		response, resynch := cli.server.handleCommand(cmd, cli)
 
