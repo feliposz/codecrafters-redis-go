@@ -200,6 +200,16 @@ func (srv *serverState) handleCommand(cmd []string) (response string, resynch bo
 			response = encodeBulkString("")
 		}
 
+	case "INCR":
+		isWrite = true
+		key := cmd[1]
+		if curr, found := srv.store[key]; found {
+			value, _ := strconv.Atoi(curr)
+			value++
+			srv.store[key] = strconv.Itoa(value)
+			response = encodeInt(value)
+		}
+
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
 		case "GETACK":
