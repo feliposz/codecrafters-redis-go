@@ -208,6 +208,10 @@ func (srv *serverState) handleCommand(cmd []string) (response string, resynch bo
 			value++
 			srv.store[key] = strconv.Itoa(value)
 			response = encodeInt(value)
+		} else {
+			value := 1
+			srv.store[key] = strconv.Itoa(value)
+			response = encodeInt(value)
 		}
 
 	case "REPLCONF":
