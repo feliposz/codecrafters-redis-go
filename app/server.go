@@ -41,6 +41,7 @@ type clientState struct {
 	id     int
 	conn   net.Conn
 	multi  bool
+	queue  [][]string
 }
 
 func main() {
@@ -136,7 +137,24 @@ func (cli *clientState) serve() {
 			break
 		}
 
-		if cli.multi && cmd[0] != "EXEC" {
+		var response string
+		var resynch bool
+
+		if cmd[0] == "EXEC" {
+			if cli.multi {
+				responses := []string{}
+				for _, cmd := range cli.queue {
+					response, _ := cli.server.handleCommand(cmd, cli)
+					responses = append(responses, response)
+				}
+				response = encodeArray(responses)
+				cli.queue = nil
+				cli.multi = false
+			} else {
+				response = encodeError(fmt.Errorf("EXEC without MULTI"))
+			}
+		} else if cli.multi {
+			cli.queue = append(cli.queue, cmd)
 			response := encodeSimpleString("QUEUED")
 			bytesSent, err := cli.conn.Write([]byte(response))
 			if err != nil {
@@ -145,10 +163,10 @@ func (cli *clientState) serve() {
 			}
 			fmt.Printf("[#%d] Bytes sent: %d %q\n", cli.id, bytesSent, response)
 			continue
+		} else {
+			fmt.Printf("[#%d] Command = %q\n", cli.id, cmd)
+			response, resynch = cli.server.handleCommand(cmd, cli)
 		}
-
-		fmt.Printf("[#%d] Command = %q\n", cli.id, cmd)
-		response, resynch := cli.server.handleCommand(cmd, cli)
 
 		if len(response) > 0 {
 			bytesSent, err := cli.conn.Write([]byte(response))
@@ -248,14 +266,6 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	case "MULTI":
 		cli.multi = true
 		response = "+OK\r\n"
-
-	case "EXEC":
-		if cli.multi {
-			response = encodeStringArray(nil)
-			cli.multi = false
-		} else {
-			response = encodeError(fmt.Errorf("EXEC without MULTI"))
-		}
 
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
