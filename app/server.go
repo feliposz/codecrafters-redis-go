@@ -381,8 +381,17 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		listKey := cmd[1]
 		list := srv.lists[listKey]
 		if len(list) >= 1 {
-			response = encodeBulkString(list[0])
-			srv.lists[listKey] = slices.Delete(list, 0, 1)
+			if len(cmd) < 3 {
+				response = encodeBulkString(list[0])
+				srv.lists[listKey] = slices.Delete(list, 0, 1)
+			} else {
+				count, _ := strconv.Atoi(cmd[2])
+				if count > len(list) {
+					count = len(list)
+				}
+				response = encodeStringArray(list[:count])
+				srv.lists[listKey] = slices.Delete(list, 0, count)
+			}
 		} else {
 			response = encodeBulkString("")
 		}
