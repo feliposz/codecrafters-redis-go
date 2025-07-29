@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -336,6 +337,12 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	case "RPUSH":
 		listKey, values := cmd[1], cmd[2:]
 		srv.lists[listKey] = append(srv.lists[listKey], values...)
+		response = encodeInt(len(srv.lists[listKey]))
+
+	case "LPUSH":
+		listKey, values := cmd[1], cmd[2:]
+		slices.Reverse(values)
+		srv.lists[listKey] = append(values, srv.lists[listKey]...)
 		response = encodeInt(len(srv.lists[listKey]))
 
 	case "LRANGE":
