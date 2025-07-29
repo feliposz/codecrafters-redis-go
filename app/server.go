@@ -344,11 +344,25 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		end, _ := strconv.Atoi(cmd[3])
 		response = encodeStringArray(nil)
 		list, found := srv.lists[listKey]
-		if found && start < len(list) && start <= end {
-			if end >= len(list) {
-				end = len(list) - 1
+		if found {
+			if start < 0 {
+				start += len(list)
+				if start < 0 {
+					start = 0
+				}
 			}
-			response = encodeStringArray(list[start : end+1])
+			if end < 0 {
+				end += len(list)
+				if end < 0 {
+					end = 0
+				}
+			}
+			if start < len(list) && start <= end {
+				if end >= len(list) {
+					end = len(list) - 1
+				}
+				response = encodeStringArray(list[start : end+1])
+			}
 		}
 
 	}
