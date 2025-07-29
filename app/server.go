@@ -353,6 +353,11 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		list := srv.getList(listKey, true)
 		list.data = append(list.data, values...)
 		response = encodeInt(len(list.data))
+		if len(list.blocked) > 0 {
+			waitingData := list.blocked[0]
+			list.blocked = slices.Delete(list.blocked, 0, 1)
+			*waitingData <- true
+		}
 
 	case "LPUSH":
 		listKey, values := cmd[1], cmd[2:]
@@ -416,6 +421,17 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			response = encodeBulkString("")
 		}
 
+	case "BLPOP":
+		listKey := cmd[1]
+		list := srv.getList(listKey, true)
+		if len(list.data) < 1 {
+			waitingData := make(chan bool)
+			list.blocked = append(list.blocked, &waitingData)
+			<-waitingData
+		}
+		value := list.data[0]
+		response = encodeStringArray([]string{listKey, value})
+		list.data = slices.Delete(list.data, 0, 1)
 	}
 
 	if isWrite {
