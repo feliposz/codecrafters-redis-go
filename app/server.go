@@ -338,6 +338,19 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		srv.lists[listKey] = append(srv.lists[listKey], values...)
 		response = encodeInt(len(srv.lists[listKey]))
 
+	case "LRANGE":
+		listKey := cmd[1]
+		start, _ := strconv.Atoi(cmd[2])
+		end, _ := strconv.Atoi(cmd[3])
+		response = encodeStringArray(nil)
+		list, found := srv.lists[listKey]
+		if found && start < len(list) && start <= end {
+			if end >= len(list) {
+				end = len(list) - 1
+			}
+			response = encodeStringArray(list[start : end+1])
+		}
+
 	}
 
 	if isWrite {
