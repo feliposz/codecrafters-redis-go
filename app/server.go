@@ -25,13 +25,18 @@ type serverConfig struct {
 	dbfilename    string
 }
 
+type listEntry struct {
+	data    []string
+	blocked []*chan bool
+}
+
 // TODO: add some mutexes around these...
 
 type serverState struct {
 	streams       map[string]*stream
 	store         map[string]string
 	ttl           map[string]time.Time
-	lists         map[string][]string
+	lists         map[string]*listEntry
 	config        serverConfig
 	replicas      []replica
 	replicaOffset int
@@ -71,10 +76,19 @@ func main() {
 	srv.start()
 }
 
+func (srv *serverState) getList(key string, create bool) (list *listEntry) {
+	list, found := srv.lists[key]
+	if !found && create {
+		list = new(listEntry)
+		srv.lists[key] = list
+	}
+	return list
+}
+
 func newServer(config serverConfig) *serverState {
 	var srv serverState
 	srv.store = make(map[string]string)
-	srv.lists = make(map[string][]string)
+	srv.lists = make(map[string]*listEntry)
 	srv.ttl = make(map[string]time.Time)
 	srv.streams = make(map[string]*stream)
 	srv.ackReceived = make(chan bool)
@@ -336,61 +350,67 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 
 	case "RPUSH":
 		listKey, values := cmd[1], cmd[2:]
-		srv.lists[listKey] = append(srv.lists[listKey], values...)
-		response = encodeInt(len(srv.lists[listKey]))
+		list := srv.getList(listKey, true)
+		list.data = append(list.data, values...)
+		response = encodeInt(len(list.data))
 
 	case "LPUSH":
 		listKey, values := cmd[1], cmd[2:]
+		list := srv.getList(listKey, true)
 		slices.Reverse(values)
-		srv.lists[listKey] = append(values, srv.lists[listKey]...)
-		response = encodeInt(len(srv.lists[listKey]))
+		list.data = append(values, list.data...)
+		response = encodeInt(len(list.data))
 
 	case "LRANGE":
 		listKey := cmd[1]
 		start, _ := strconv.Atoi(cmd[2])
 		end, _ := strconv.Atoi(cmd[3])
 		response = encodeStringArray(nil)
-		list, found := srv.lists[listKey]
-		if found {
+		list := srv.getList(listKey, false)
+		if list != nil {
 			if start < 0 {
-				start += len(list)
+				start += len(list.data)
 				if start < 0 {
 					start = 0
 				}
 			}
 			if end < 0 {
-				end += len(list)
+				end += len(list.data)
 				if end < 0 {
 					end = 0
 				}
 			}
-			if start < len(list) && start <= end {
-				if end >= len(list) {
-					end = len(list) - 1
+			if start < len(list.data) && start <= end {
+				if end >= len(list.data) {
+					end = len(list.data) - 1
 				}
-				response = encodeStringArray(list[start : end+1])
+				response = encodeStringArray(list.data[start : end+1])
 			}
 		}
 
 	case "LLEN":
 		listKey := cmd[1]
-		list := srv.lists[listKey]
-		response = encodeInt(len(list))
+		list := srv.getList(listKey, false)
+		if list != nil {
+			response = encodeInt(len(list.data))
+		} else {
+			response = encodeInt(0)
+		}
 
 	case "LPOP":
 		listKey := cmd[1]
-		list := srv.lists[listKey]
-		if len(list) >= 1 {
+		list := srv.getList(listKey, false)
+		if list != nil && len(list.data) >= 1 {
 			if len(cmd) < 3 {
-				response = encodeBulkString(list[0])
-				srv.lists[listKey] = slices.Delete(list, 0, 1)
+				response = encodeBulkString(list.data[0])
+				list.data = slices.Delete(list.data, 0, 1)
 			} else {
 				count, _ := strconv.Atoi(cmd[2])
-				if count > len(list) {
-					count = len(list)
+				if count > len(list.data) {
+					count = len(list.data)
 				}
-				response = encodeStringArray(list[:count])
-				srv.lists[listKey] = slices.Delete(list, 0, count)
+				response = encodeStringArray(list.data[:count])
+				list.data = slices.Delete(list.data, 0, count)
 			}
 		} else {
 			response = encodeBulkString("")
