@@ -372,6 +372,11 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			}
 		}
 
+	case "LLEN":
+		listKey := cmd[1]
+		list := srv.lists[listKey]
+		response = encodeInt(len(list))
+
 	}
 
 	if isWrite {
