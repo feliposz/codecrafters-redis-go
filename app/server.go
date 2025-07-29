@@ -334,8 +334,8 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		response = srv.handleStreamRead(cmd)
 
 	case "RPUSH":
-		listKey, value := cmd[1], cmd[2]
-		srv.lists[listKey] = append(srv.lists[listKey], value)
+		listKey, values := cmd[1], cmd[2:]
+		srv.lists[listKey] = append(srv.lists[listKey], values...)
 		response = encodeInt(len(srv.lists[listKey]))
 
 	}
