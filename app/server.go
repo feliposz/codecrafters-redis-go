@@ -377,6 +377,16 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		list := srv.lists[listKey]
 		response = encodeInt(len(list))
 
+	case "LPOP":
+		listKey := cmd[1]
+		list := srv.lists[listKey]
+		if len(list) >= 1 {
+			response = encodeBulkString(list[0])
+			srv.lists[listKey] = slices.Delete(list, 0, 1)
+		} else {
+			response = encodeBulkString("")
+		}
+
 	}
 
 	if isWrite {
