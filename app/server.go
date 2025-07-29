@@ -30,6 +30,7 @@ type serverState struct {
 	streams       map[string]*stream
 	store         map[string]string
 	ttl           map[string]time.Time
+	lists         map[string][]string
 	config        serverConfig
 	replicas      []replica
 	replicaOffset int
@@ -72,6 +73,7 @@ func main() {
 func newServer(config serverConfig) *serverState {
 	var srv serverState
 	srv.store = make(map[string]string)
+	srv.lists = make(map[string][]string)
 	srv.ttl = make(map[string]time.Time)
 	srv.streams = make(map[string]*stream)
 	srv.ackReceived = make(chan bool)
@@ -330,6 +332,11 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 
 	case "XREAD":
 		response = srv.handleStreamRead(cmd)
+
+	case "RPUSH":
+		listKey, value := cmd[1], cmd[2]
+		srv.lists[listKey] = append(srv.lists[listKey], value)
+		response = encodeInt(len(srv.lists[listKey]))
 
 	}
 
