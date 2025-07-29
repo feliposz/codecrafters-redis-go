@@ -355,7 +355,6 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		response = encodeInt(len(list.data))
 		if len(list.blocked) > 0 {
 			waitingData := list.blocked[0]
-			list.blocked = slices.Delete(list.blocked, 0, 1)
 			*waitingData <- true
 		}
 
@@ -365,6 +364,10 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		slices.Reverse(values)
 		list.data = append(values, list.data...)
 		response = encodeInt(len(list.data))
+		if len(list.blocked) > 0 {
+			waitingData := list.blocked[0]
+			*waitingData <- true
+		}
 
 	case "LRANGE":
 		listKey := cmd[1]
@@ -423,15 +426,35 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 
 	case "BLPOP":
 		listKey := cmd[1]
+		blockTimeout, _ := strconv.ParseFloat(cmd[2], 64)
 		list := srv.getList(listKey, true)
+		timedOut := false
 		if len(list.data) < 1 {
 			waitingData := make(chan bool)
 			list.blocked = append(list.blocked, &waitingData)
-			<-waitingData
+			if blockTimeout > 0 {
+				blockTimeout *= 1000
+				fmt.Printf("Waiting for a push on list %s (timeout = %f ms)...\n", listKey, blockTimeout)
+				timer := time.After(time.Duration(blockTimeout) * time.Millisecond)
+				select {
+				case <-waitingData:
+					timedOut = false
+				case <-timer:
+					timedOut = true
+				}
+			} else {
+				fmt.Printf("Waiting for a write on stream %s (no timeout!)...\n", listKey)
+				<-waitingData
+			}
+			list.blocked = slices.DeleteFunc(list.blocked, func(ch *chan bool) bool { return ch == &waitingData })
 		}
-		value := list.data[0]
-		response = encodeStringArray([]string{listKey, value})
-		list.data = slices.Delete(list.data, 0, 1)
+		if timedOut {
+			response = encodeBulkString("")
+		} else {
+			value := list.data[0]
+			response = encodeStringArray([]string{listKey, value})
+			list.data = slices.Delete(list.data, 0, 1)
+		}
 	}
 
 	if isWrite {
