@@ -7,10 +7,11 @@ import (
 	"strings"
 )
 
+func encodeNil() string {
+	return "$-1\r\n"
+}
+
 func encodeBulkString(s string) string {
-	if len(s) == 0 {
-		return "$-1\r\n"
-	}
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
 }
 

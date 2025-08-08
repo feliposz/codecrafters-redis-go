@@ -243,7 +243,11 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		response = "+OK\r\n"
 
 	case "PING":
-		response = "+PONG\r\n"
+		if subscribeMode {
+			response = encodeArray([]any{"pong", ""})
+		} else {
+			response = "+PONG\r\n"
+		}
 
 	case "ECHO":
 		response = encodeBulkString(cmd[1])
@@ -284,10 +288,10 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			} else if exists {
 				delete(srv.ttl, key)
 				delete(srv.store, key)
-				response = encodeBulkString("")
+				response = encodeNil()
 			}
 		} else {
-			response = encodeBulkString("")
+			response = encodeNil()
 		}
 
 	case "INCR":
@@ -441,7 +445,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 				list.data = slices.Delete(list.data, 0, count)
 			}
 		} else {
-			response = encodeBulkString("")
+			response = encodeNil()
 		}
 
 	case "BLPOP":
@@ -469,7 +473,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			list.blocked = slices.DeleteFunc(list.blocked, func(ch *chan bool) bool { return ch == &waitingData })
 		}
 		if timedOut {
-			response = encodeBulkString("")
+			response = encodeNil()
 		} else {
 			value := list.data[0]
 			response = encodeStringArray([]string{listKey, value})
