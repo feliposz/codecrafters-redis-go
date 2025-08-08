@@ -159,7 +159,7 @@ func (cli *clientState) serve() {
 
 		if cmd[0] == "EXEC" {
 			if cli.multi {
-				responses := []string{}
+				responses := []any{}
 				for _, cmd := range cli.queue {
 					response, _ := cli.server.handleCommand(cmd, cli)
 					responses = append(responses, response)
@@ -455,6 +455,11 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			response = encodeStringArray([]string{listKey, value})
 			list.data = slices.Delete(list.data, 0, 1)
 		}
+
+	case "SUBSCRIBE":
+		channel := cmd[1]
+		response = encodeArray([]any{"subscribe", channel, 1})
+
 	}
 
 	if isWrite {

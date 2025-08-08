@@ -26,10 +26,21 @@ func encodeStringArray(arr []string) string {
 	return result
 }
 
-func encodeArray(arr []string) string {
+func encodeArray(arr []any) string {
 	result := fmt.Sprintf("*%d\r\n", len(arr))
-	for _, s := range arr {
-		result += s
+	for _, element := range arr {
+		switch value := element.(type) {
+		case string:
+			result += encodeBulkString(value)
+		case int:
+			result += encodeInt(value)
+		case error:
+			result += encodeError(value)
+		case nil:
+			result += encodeBulkString("")
+		default:
+			panic("not implemented")
+		}
 	}
 	return result
 }
