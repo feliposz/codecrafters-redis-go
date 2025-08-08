@@ -494,6 +494,13 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		srv.subs[channel] = append(srv.subs[channel], cli)
 		response = encodeArray([]any{"subscribe", channel, len(cli.subs)})
 
+	case "UNSUBSCRIBE":
+		channel := cmd[1]
+		delete(cli.subs, channel)
+		srv.subs[channel] = slices.DeleteFunc(srv.subs[channel],
+			func(c *clientState) bool { return c == cli })
+		response = encodeArray([]any{"unsubscribe", channel, len(cli.subs)})
+
 	case "PUBLISH":
 		channel := cmd[1]
 		message := cmd[2]
