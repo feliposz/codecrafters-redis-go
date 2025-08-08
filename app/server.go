@@ -49,6 +49,7 @@ type clientState struct {
 	conn   net.Conn
 	multi  bool
 	queue  [][]string
+	subs   map[string]bool
 }
 
 func main() {
@@ -101,6 +102,7 @@ func newClient(server *serverState, id int, conn net.Conn) *clientState {
 	client.server = server
 	client.id = id
 	client.conn = conn
+	client.subs = make(map[string]bool)
 	return &client
 }
 
@@ -458,7 +460,8 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 
 	case "SUBSCRIBE":
 		channel := cmd[1]
-		response = encodeArray([]any{"subscribe", channel, 1})
+		cli.subs[channel] = true
+		response = encodeArray([]any{"subscribe", channel, len(cli.subs)})
 
 	}
 
