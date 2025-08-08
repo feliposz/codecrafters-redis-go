@@ -217,10 +217,28 @@ func (cli *clientState) serve() {
 	cli.conn.Close()
 }
 
+var subscribeModeCommands = []string{
+	"SUBSCRIBE",
+	"UNSUBSCRIBE",
+	"PSUBSCRIBE",
+	"PUNSUBSCRIBE",
+	"PING",
+	"QUIT",
+}
+
 func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response string, resynch bool) {
 	isWrite := false
+	command := strings.ToUpper(cmd[0])
 
-	switch strings.ToUpper(cmd[0]) {
+	subscribeMode := len(cli.subs) > 0
+	isSubscribeModeCommand := slices.Index(subscribeModeCommands, command) != -1
+
+	if subscribeMode && !isSubscribeModeCommand {
+		response = encodeError(fmt.Errorf("can't execute '%s'", command))
+		return
+	}
+
+	switch command {
 	case "COMMAND":
 		response = "+OK\r\n"
 
