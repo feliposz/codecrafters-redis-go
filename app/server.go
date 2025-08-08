@@ -37,6 +37,7 @@ type serverState struct {
 	store         map[string]string
 	ttl           map[string]time.Time
 	lists         map[string]*listEntry
+	subs          map[string][]*clientState
 	config        serverConfig
 	replicas      []replica
 	replicaOffset int
@@ -92,6 +93,7 @@ func newServer(config serverConfig) *serverState {
 	srv.lists = make(map[string]*listEntry)
 	srv.ttl = make(map[string]time.Time)
 	srv.streams = make(map[string]*stream)
+	srv.subs = make(map[string][]*clientState)
 	srv.ackReceived = make(chan bool)
 	srv.config = config
 	return &srv
@@ -215,6 +217,12 @@ func (cli *clientState) serve() {
 
 	fmt.Printf("[#%d] Client closing\n", cli.id)
 	cli.conn.Close()
+
+	// Unsubscribe from all channels
+	for channel := range cli.server.subs {
+		cli.server.subs[channel] = slices.DeleteFunc(cli.server.subs[channel],
+			func(c *clientState) bool { return c == cli })
+	}
 }
 
 var subscribeModeCommands = []string{
@@ -483,7 +491,12 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	case "SUBSCRIBE":
 		channel := cmd[1]
 		cli.subs[channel] = true
+		srv.subs[channel] = append(srv.subs[channel], cli)
 		response = encodeArray([]any{"subscribe", channel, len(cli.subs)})
+
+	case "PUBLISH":
+		channel := cmd[1]
+		response = encodeInt(len(srv.subs[channel]))
 
 	}
 
