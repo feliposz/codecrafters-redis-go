@@ -496,8 +496,17 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 
 	case "PUBLISH":
 		channel := cmd[1]
+		message := cmd[2]
 		response = encodeInt(len(srv.subs[channel]))
-
+		messageToPublish := encodeStringArray([]string{"message", channel, message})
+		for _, cli := range srv.subs[channel] {
+			bytesSent, err := cli.conn.Write([]byte(messageToPublish))
+			if err != nil {
+				fmt.Printf("[#%d] Error sending message: %v\n", cli.id, err.Error())
+				break
+			}
+			fmt.Printf("[#%d] Bytes sent: %d %q\n", cli.id, bytesSent, response)
+		}
 	}
 
 	if isWrite {
