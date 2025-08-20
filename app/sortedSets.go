@@ -32,7 +32,6 @@ func (s *sortedSetContainer) Put(score float64, member string) int {
 	newEntry := &sortedSetEntry{score, member}
 	count := 1
 	if oldEntry, exists := s.members[member]; exists {
-		oldEntry.score = score
 		pos, _ := slices.BinarySearchFunc(s.sorted, oldEntry, sortedSetEntryCompare)
 		s.sorted = slices.Delete(s.sorted, pos, pos)
 		count = 0
@@ -41,4 +40,12 @@ func (s *sortedSetContainer) Put(score float64, member string) int {
 	s.sorted = slices.Insert(s.sorted, pos, newEntry)
 	s.members[member] = newEntry
 	return count
+}
+
+func (s *sortedSetContainer) GetRank(member string) int {
+	if oldEntry, exists := s.members[member]; exists {
+		pos, _ := slices.BinarySearchFunc(s.sorted, oldEntry, sortedSetEntryCompare)
+		return pos
+	}
+	return -1
 }

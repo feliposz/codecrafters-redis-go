@@ -88,9 +88,9 @@ func (srv *serverState) getList(key string, create bool) (list *listEntry) {
 	return list
 }
 
-func (srv *serverState) getSortedSet(key string) *sortedSetContainer {
+func (srv *serverState) getSortedSet(key string, create bool) *sortedSetContainer {
 	set, exists := srv.sortedSets[key]
-	if !exists {
+	if !exists && create {
 		set = NewSortedSet()
 		srv.sortedSets[key] = set
 	}
@@ -530,10 +530,21 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		key := cmd[1]
 		score, _ := strconv.ParseFloat(cmd[2], 64)
 		member := cmd[3]
-		set := srv.getSortedSet(key)
+		set := srv.getSortedSet(key, true)
 		count := set.Put(score, member)
 		response = encodeInt(count)
 
+	case "ZRANK":
+		key := cmd[1]
+		member := cmd[2]
+		set := srv.getSortedSet(key, false)
+		response = encodeNil()
+		if set != nil {
+			rank := set.GetRank(member)
+			if rank >= 0 {
+				response = encodeInt(rank)
+			}
+		}
 	}
 
 	if isWrite {
