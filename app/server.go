@@ -545,6 +545,18 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 				response = encodeInt(rank)
 			}
 		}
+
+	case "ZRANGE":
+		key := cmd[1]
+		start, _ := strconv.Atoi(cmd[2])
+		end, _ := strconv.Atoi(cmd[3])
+		set := srv.getSortedSet(key, false)
+		response = encodeArray(nil)
+		if set != nil {
+			members := set.GetRange(start, end)
+			response = encodeArray(members)
+		}
+
 	}
 
 	if isWrite {

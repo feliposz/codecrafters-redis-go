@@ -49,3 +49,13 @@ func (s *sortedSetContainer) GetRank(member string) int {
 	}
 	return -1
 }
+
+func (s *sortedSetContainer) GetRange(start int, end int) (result []any) {
+	if end > len(s.sorted)-1 {
+		end = len(s.sorted) - 1
+	}
+	for i := start; i <= end; i++ {
+		result = append(result, s.sorted[i].member)
+	}
+	return
+}
