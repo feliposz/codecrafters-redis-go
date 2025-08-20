@@ -30,11 +30,6 @@ type listEntry struct {
 	blocked []*chan bool
 }
 
-type sortedSetEntry struct {
-	score  float64
-	member string
-}
-
 // TODO: add some mutexes around these...
 
 type serverState struct {
@@ -43,7 +38,7 @@ type serverState struct {
 	ttl           map[string]time.Time
 	lists         map[string]*listEntry
 	subs          map[string][]*clientState
-	sortedSets    map[string][]sortedSetEntry
+	sortedSets    map[string]*sortedSetContainer
 	config        serverConfig
 	replicas      []replica
 	replicaOffset int
@@ -93,6 +88,15 @@ func (srv *serverState) getList(key string, create bool) (list *listEntry) {
 	return list
 }
 
+func (srv *serverState) getSortedSet(key string) *sortedSetContainer {
+	set, exists := srv.sortedSets[key]
+	if !exists {
+		set = NewSortedSet()
+		srv.sortedSets[key] = set
+	}
+	return set
+}
+
 func newServer(config serverConfig) *serverState {
 	var srv serverState
 	srv.store = make(map[string]string)
@@ -100,7 +104,7 @@ func newServer(config serverConfig) *serverState {
 	srv.ttl = make(map[string]time.Time)
 	srv.streams = make(map[string]*stream)
 	srv.subs = make(map[string][]*clientState)
-	srv.sortedSets = make(map[string][]sortedSetEntry)
+	srv.sortedSets = make(map[string]*sortedSetContainer)
 	srv.ackReceived = make(chan bool)
 	srv.config = config
 	return &srv
@@ -526,9 +530,9 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		key := cmd[1]
 		score, _ := strconv.ParseFloat(cmd[2], 64)
 		member := cmd[3]
-		entry := sortedSetEntry{score, member}
-		srv.sortedSets[key] = append(srv.sortedSets[key], entry)
-		response = encodeInt(1)
+		set := srv.getSortedSet(key)
+		count := set.Put(score, member)
+		response = encodeInt(count)
 
 	}
 
