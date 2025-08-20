@@ -566,6 +566,17 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			response = encodeInt(count)
 		}
 
+	case "ZSCORE":
+		key := cmd[1]
+		member := cmd[2]
+		set := srv.getSortedSet(key, false)
+		response = encodeNil()
+		if set != nil {
+			if entry, exists := set.members[member]; exists {
+				response = encodeBulkString(fmt.Sprint(entry.score))
+			}
+		}
+
 	}
 
 	if isWrite {
