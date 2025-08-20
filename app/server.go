@@ -557,6 +557,15 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			response = encodeArray(members)
 		}
 
+	case "ZCARD":
+		key := cmd[1]
+		set := srv.getSortedSet(key, false)
+		response = encodeInt(0)
+		if set != nil {
+			count := len(set.sorted)
+			response = encodeInt(count)
+		}
+
 	}
 
 	if isWrite {

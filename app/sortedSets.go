@@ -33,7 +33,7 @@ func (s *sortedSetContainer) Put(score float64, member string) int {
 	count := 1
 	if oldEntry, exists := s.members[member]; exists {
 		pos, _ := slices.BinarySearchFunc(s.sorted, oldEntry, sortedSetEntryCompare)
-		s.sorted = slices.Delete(s.sorted, pos, pos)
+		s.sorted = slices.Delete(s.sorted, pos, pos+1)
 		count = 0
 	}
 	pos, _ := slices.BinarySearchFunc(s.sorted, newEntry, sortedSetEntryCompare)
