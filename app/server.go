@@ -30,6 +30,11 @@ type listEntry struct {
 	blocked []*chan bool
 }
 
+type sortedSetEntry struct {
+	score  float64
+	member string
+}
+
 // TODO: add some mutexes around these...
 
 type serverState struct {
@@ -38,6 +43,7 @@ type serverState struct {
 	ttl           map[string]time.Time
 	lists         map[string]*listEntry
 	subs          map[string][]*clientState
+	sortedSets    map[string][]sortedSetEntry
 	config        serverConfig
 	replicas      []replica
 	replicaOffset int
@@ -94,6 +100,7 @@ func newServer(config serverConfig) *serverState {
 	srv.ttl = make(map[string]time.Time)
 	srv.streams = make(map[string]*stream)
 	srv.subs = make(map[string][]*clientState)
+	srv.sortedSets = make(map[string][]sortedSetEntry)
 	srv.ackReceived = make(chan bool)
 	srv.config = config
 	return &srv
@@ -514,6 +521,15 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			}
 			fmt.Printf("[#%d] Bytes sent: %d %q\n", cli.id, bytesSent, response)
 		}
+
+	case "ZADD":
+		key := cmd[1]
+		score, _ := strconv.ParseFloat(cmd[2], 64)
+		member := cmd[3]
+		entry := sortedSetEntry{score, member}
+		srv.sortedSets[key] = append(srv.sortedSets[key], entry)
+		response = encodeInt(1)
+
 	}
 
 	if isWrite {
