@@ -51,8 +51,21 @@ func (s *sortedSetContainer) GetRank(member string) int {
 }
 
 func (s *sortedSetContainer) GetRange(start int, end int) (result []any) {
-	if end > len(s.sorted)-1 {
-		end = len(s.sorted) - 1
+	if start < 0 {
+		start += len(s.sorted)
+		if start < 0 {
+			start = 0
+		}
+	}
+	if end < 0 {
+		end += len(s.sorted)
+		if end < 0 {
+			end = 0
+		}
+	}
+	last := len(s.sorted) - 1
+	if end > last {
+		end = last
 	}
 	for i := start; i <= end; i++ {
 		result = append(result, s.sorted[i].member)
