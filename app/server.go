@@ -577,6 +577,16 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			}
 		}
 
+	case "ZREM":
+		key := cmd[1]
+		member := cmd[2]
+		set := srv.getSortedSet(key, true)
+		response = encodeInt(0)
+		if set != nil {
+			count := set.Del(member)
+			response = encodeInt(count)
+		}
+
 	}
 
 	if isWrite {
