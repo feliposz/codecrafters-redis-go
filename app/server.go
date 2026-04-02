@@ -589,8 +589,12 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 
 	case "ACL":
 		sub := cmd[1]
-		if sub == "WHOAMI" {
+		switch sub {
+		case "WHOAMI":
 			response = encodeBulkString("default")
+		case "GETUSER":
+			arr := []any{"flags", []any{}}
+			response = encodeArray(arr)
 		}
 	}
 

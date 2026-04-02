@@ -39,6 +39,8 @@ func encodeArray(arr []any) string {
 			result += encodeError(value)
 		case nil:
 			result += encodeBulkString("")
+		case []any:
+			result += encodeArray(value)
 		default:
 			panic("not implemented")
 		}
