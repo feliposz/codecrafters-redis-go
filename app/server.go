@@ -593,7 +593,10 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		case "WHOAMI":
 			response = encodeBulkString("default")
 		case "GETUSER":
-			arr := []any{"flags", []any{"nopass"}}
+			arr := []any{
+				"flags", []any{"nopass"},
+				"passwords", []any{},
+			}
 			response = encodeArray(arr)
 		}
 	}
