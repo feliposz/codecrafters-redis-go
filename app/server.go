@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -39,10 +40,16 @@ type serverState struct {
 	lists         map[string]*listEntry
 	subs          map[string][]*clientState
 	sortedSets    map[string]*sortedSetContainer
+	users         map[string]*user
 	config        serverConfig
 	replicas      []replica
 	replicaOffset int
 	ackReceived   chan bool
+}
+
+type user struct {
+	flags     []string
+	passwords []string
 }
 
 type clientState struct {
@@ -106,6 +113,8 @@ func newServer(config serverConfig) *serverState {
 	srv.subs = make(map[string][]*clientState)
 	srv.sortedSets = make(map[string]*sortedSetContainer)
 	srv.ackReceived = make(chan bool)
+	srv.users = make(map[string]*user)
+	srv.users["default"] = &user{flags: []string{"nopass"}}
 	srv.config = config
 	return &srv
 }
@@ -593,11 +602,26 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		case "WHOAMI":
 			response = encodeBulkString("default")
 		case "GETUSER":
+			name := cmd[2]
+			user := srv.users[name]
 			arr := []any{
-				"flags", []any{"nopass"},
-				"passwords", []any{},
+				"flags", user.flags,
+				"passwords", user.passwords,
 			}
 			response = encodeArray(arr)
+		case "SETUSER":
+			name := cmd[2]
+			passwd := cmd[3]
+			user := srv.users[name]
+			hash := sha256.New()
+			hash.Write([]byte(passwd[1:]))
+			hashedPasswd := fmt.Sprintf("%x", hash.Sum(nil))
+			user.passwords = append(user.passwords, hashedPasswd)
+			nopassIndex := slices.Index(user.flags, "nopass")
+			if nopassIndex != -1 {
+				user.flags = slices.Delete(user.flags, nopassIndex, nopassIndex+1)
+			}
+			response = "+OK\r\n"
 		}
 	}
 

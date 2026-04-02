@@ -41,8 +41,10 @@ func encodeArray(arr []any) string {
 			result += encodeBulkString("")
 		case []any:
 			result += encodeArray(value)
+		case []string:
+			result += encodeStringArray(value)
 		default:
-			panic("not implemented")
+			panic(fmt.Sprintf("not implemented type: %T", element))
 		}
 	}
 	return result
