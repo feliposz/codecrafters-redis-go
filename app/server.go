@@ -587,6 +587,11 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			response = encodeInt(count)
 		}
 
+	case "ACL":
+		sub := cmd[1]
+		if sub == "WHOAMI" {
+			response = encodeBulkString("default")
+		}
 	}
 
 	if isWrite {
