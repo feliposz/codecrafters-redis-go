@@ -623,6 +623,20 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			}
 			response = "+OK\r\n"
 		}
+
+	case "AUTH":
+		name := cmd[1]
+		passwd := cmd[2]
+		user := srv.users[name]
+		hash := sha256.New()
+		hash.Write([]byte(passwd))
+		hashedPasswd := fmt.Sprintf("%x", hash.Sum(nil))
+		passIndex := slices.Index(user.passwords, hashedPasswd)
+		if passIndex == -1 {
+			response = encodeErrorType("WRONGPASS", "invalid username-password pair or user is disabled.")
+		} else {
+			response = "+OK\r\n"
+		}
 	}
 
 	if isWrite {

@@ -58,6 +58,10 @@ func encodeError(e error) string {
 	return fmt.Sprintf("-ERR %s\r\n", e.Error())
 }
 
+func encodeErrorType(t string, msg string) string {
+	return fmt.Sprintf("-%s %s\r\n", t, msg)
+}
+
 func decodeStringArray(reader *bufio.Reader) (arr []string, bytesRead int, err error) {
 	var arrSize, strSize int
 	for {
