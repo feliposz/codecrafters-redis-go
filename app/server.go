@@ -48,6 +48,7 @@ type serverState struct {
 }
 
 type user struct {
+	name      string
 	flags     []string
 	passwords []string
 }
@@ -116,7 +117,7 @@ func newServer(config serverConfig) *serverState {
 	srv.sortedSets = make(map[string]*sortedSetContainer)
 	srv.ackReceived = make(chan bool)
 	srv.users = make(map[string]*user)
-	srv.users["default"] = &user{flags: []string{"nopass"}}
+	srv.users["default"] = &user{name: "default", flags: []string{"nopass"}}
 	srv.config = config
 	return &srv
 }
@@ -262,7 +263,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	isWrite := false
 	command := strings.ToUpper(cmd[0])
 
-	if !cli.auth {
+	if !cli.auth && command != "AUTH" {
 		response = encodeErrorType("NOAUTH", "Authentication required.")
 		return
 	}
@@ -609,7 +610,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		sub := cmd[1]
 		switch sub {
 		case "WHOAMI":
-			response = encodeBulkString("default")
+			response = encodeBulkString(cli.user.name)
 		case "GETUSER":
 			name := cmd[2]
 			user := srv.users[name]
@@ -644,6 +645,8 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		if passIndex == -1 {
 			response = encodeErrorType("WRONGPASS", "invalid username-password pair or user is disabled.")
 		} else {
+			cli.user = user
+			cli.auth = true
 			response = "+OK\r\n"
 		}
 	}
