@@ -59,6 +59,8 @@ type clientState struct {
 	multi  bool
 	queue  [][]string
 	subs   map[string]bool
+	user   *user
+	auth   bool
 }
 
 func main() {
@@ -125,6 +127,8 @@ func newClient(server *serverState, id int, conn net.Conn) *clientState {
 	client.id = id
 	client.conn = conn
 	client.subs = make(map[string]bool)
+	client.user = server.users["default"]
+	client.auth = slices.Contains(client.user.flags, "nopass")
 	return &client
 }
 
@@ -257,6 +261,11 @@ var subscribeModeCommands = []string{
 func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response string, resynch bool) {
 	isWrite := false
 	command := strings.ToUpper(cmd[0])
+
+	if !cli.auth {
+		response = encodeErrorType("NOAUTH", "Authentication required.")
+		return
+	}
 
 	subscribeMode := len(cli.subs) > 0
 	isSubscribeModeCommand := slices.Index(subscribeModeCommands, command) != -1
