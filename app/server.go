@@ -208,15 +208,19 @@ func (cli *clientState) serve() {
 				response = encodeError(fmt.Errorf("DISCARD without MULTI"))
 			}
 		} else if cli.multi {
-			cli.queue = append(cli.queue, cmd)
-			response := encodeSimpleString("QUEUED")
-			bytesSent, err := cli.conn.Write([]byte(response))
-			if err != nil {
-				fmt.Printf("[#%d] Error writing response: %v\n", cli.id, err.Error())
-				break
+			if cmd[0] == "WATCH" {
+				response = encodeError(fmt.Errorf("WATCH inside MULTI is not allowed"))
+			} else {
+				cli.queue = append(cli.queue, cmd)
+				response = encodeSimpleString("QUEUED")
+				bytesSent, err := cli.conn.Write([]byte(response))
+				if err != nil {
+					fmt.Printf("[#%d] Error writing response: %v\n", cli.id, err.Error())
+					break
+				}
+				fmt.Printf("[#%d] Bytes sent: %d %q\n", cli.id, bytesSent, response)
+				continue
 			}
-			fmt.Printf("[#%d] Bytes sent: %d %q\n", cli.id, bytesSent, response)
-			continue
 		} else {
 			fmt.Printf("[#%d] Command = %q\n", cli.id, cmd)
 			response, resynch = cli.server.handleCommand(cmd, cli)
