@@ -354,6 +354,9 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		cli.multi = true
 		response = "+OK\r\n"
 
+	case "WATCH":
+		response = "+OK\r\n"
+
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
 		case "GETACK":
