@@ -684,32 +684,8 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		}
 
 	case "GEOADD":
-		longitude, err := strconv.ParseFloat(cmd[2], 64)
-		if err != nil {
-			response = encodeError(fmt.Errorf("invalid longitude argument"))
-			return
-		}
-		latitude, err := strconv.ParseFloat(cmd[3], 64)
-		if err != nil {
-			response = encodeError(fmt.Errorf("invalid latitude argument"))
-			return
-		}
-		const longitudeMax = 180
-		const latitudeMax = 85.05112878
-		if longitude < -longitudeMax || longitude > longitudeMax {
-			response = encodeError(fmt.Errorf("invalid longitude value"))
-			return
-		}
-		if latitude < -latitudeMax || latitude > latitudeMax {
-			response = encodeError(fmt.Errorf("invalid latitude value"))
-			return
-		}
-		key := cmd[1]
-		member := cmd[4]
-		var score float64
-		set := srv.getSortedSet(key, true)
-		count := set.Put(score, member)
-		response = encodeInt(count)
+		response = srv.GeoAdd(cmd[1], cmd[2], cmd[3], cmd[4])
+
 	}
 
 	if isWrite {
