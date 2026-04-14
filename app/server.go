@@ -380,6 +380,11 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		srv.watch = append(srv.watch, cmd[1:]...)
 		response = "+OK\r\n"
 
+	case "UNWATCH":
+		srv.watch = nil
+		srv.watchModded = false
+		response = "+OK\r\n"
+
 	case "REPLCONF":
 		switch strings.ToUpper(cmd[1]) {
 		case "GETACK":
