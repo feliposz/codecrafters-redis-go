@@ -61,6 +61,13 @@ func (s *sortedSetContainer) GetRank(member string) int {
 	return -1
 }
 
+func (s *sortedSetContainer) GetScore(member string) float64 {
+	if entry, exists := s.members[member]; exists {
+		return entry.score
+	}
+	return -1
+}
+
 func (s *sortedSetContainer) GetRange(start int, end int) (result []any) {
 	if start < 0 {
 		start += len(s.sorted)
