@@ -684,8 +684,6 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		}
 
 	case "GEOADD":
-		// key := cmd[1]
-		// member := cmd[4]
 		longitude, err := strconv.ParseFloat(cmd[2], 64)
 		if err != nil {
 			response = encodeError(fmt.Errorf("invalid longitude argument"))
@@ -706,7 +704,12 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			response = encodeError(fmt.Errorf("invalid latitude value"))
 			return
 		}
-		response = encodeInt(1)
+		key := cmd[1]
+		member := cmd[4]
+		var score float64
+		set := srv.getSortedSet(key, true)
+		count := set.Put(score, member)
+		response = encodeInt(count)
 	}
 
 	if isWrite {
