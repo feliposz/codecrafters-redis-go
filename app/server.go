@@ -377,7 +377,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		response = "+OK\r\n"
 
 	case "WATCH":
-		srv.watch = append(srv.watch, cmd[1])
+		srv.watch = append(srv.watch, cmd[1:]...)
 		response = "+OK\r\n"
 
 	case "REPLCONF":
