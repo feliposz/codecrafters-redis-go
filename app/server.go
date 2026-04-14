@@ -211,6 +211,8 @@ func (cli *clientState) serve() {
 		} else if cmd[0] == "DISCARD" {
 			if cli.multi {
 				response = encodeSimpleString("OK")
+				cli.server.watch = nil
+				cli.server.watchModded = false
 				cli.queue = nil
 				cli.multi = false
 			} else {
