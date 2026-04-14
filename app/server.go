@@ -682,6 +682,14 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			cli.auth = true
 			response = "+OK\r\n"
 		}
+
+	case "GEOADD":
+		// key := cmd[1]
+		// longitude := cmd[2]
+		// latitude := cmd[3]
+		// member := cmd[4]
+		response = encodeInt(1)
+
 	}
 
 	if isWrite {
