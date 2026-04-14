@@ -27,8 +27,19 @@ func encodeStringArray(arr []string) string {
 	return result
 }
 
+func encodeRawSimpleStringArray(arr []string) string {
+	result := fmt.Sprintf("*%d\r\n", len(arr))
+	for _, s := range arr {
+		result += s
+	}
+	return result
+}
+
 func encodeArray(arr []any) string {
 	result := fmt.Sprintf("*%d\r\n", len(arr))
+	if arr == nil {
+		result = "*-1\r\n"
+	}
 	for _, element := range arr {
 		switch value := element.(type) {
 		case string:

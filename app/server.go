@@ -45,6 +45,8 @@ type serverState struct {
 	replicas      []replica
 	replicaOffset int
 	ackReceived   chan bool
+	watch         []string
+	watchModded   bool
 }
 
 type user struct {
@@ -188,12 +190,19 @@ func (cli *clientState) serve() {
 
 		if cmd[0] == "EXEC" {
 			if cli.multi {
-				responses := []any{}
-				for _, cmd := range cli.queue {
-					response, _ := cli.server.handleCommand(cmd, cli)
-					responses = append(responses, response)
+				responses := []string{}
+				if cli.server.watchModded {
+					fmt.Println("watched key modified, aborting transaction")
+					response = encodeArray(nil)
+				} else {
+					for _, cmd := range cli.queue {
+						response, _ := cli.server.handleCommand(cmd, cli)
+						responses = append(responses, response)
+					}
+					response = encodeRawSimpleStringArray(responses)
 				}
-				response = encodeArray(responses)
+				cli.server.watch = nil
+				cli.server.watchModded = false
 				cli.queue = nil
 				cli.multi = false
 			} else {
@@ -251,6 +260,13 @@ func (cli *clientState) serve() {
 	for channel := range cli.server.subs {
 		cli.server.subs[channel] = slices.DeleteFunc(cli.server.subs[channel],
 			func(c *clientState) bool { return c == cli })
+	}
+}
+
+func (srv *serverState) checkWatched(key string) {
+	fmt.Println("checkWatched", key)
+	if slices.Contains(srv.watch, key) {
+		srv.watchModded = true
 	}
 }
 
@@ -312,6 +328,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		isWrite = true
 		// TODO: check length
 		key, value := cmd[1], cmd[2]
+		srv.checkWatched(key)
 		srv.store[key] = value
 		if len(cmd) == 5 && strings.ToUpper(cmd[3]) == "PX" {
 			expiration, _ := strconv.Atoi(cmd[4])
@@ -339,6 +356,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	case "INCR":
 		isWrite = true
 		key := cmd[1]
+		srv.checkWatched(key)
 		if curr, found := srv.store[key]; found {
 			value, err := strconv.Atoi(curr)
 			if err != nil {
@@ -359,6 +377,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		response = "+OK\r\n"
 
 	case "WATCH":
+		srv.watch = append(srv.watch, cmd[1])
 		response = "+OK\r\n"
 
 	case "REPLCONF":
