@@ -59,3 +59,17 @@ func interleaveBits(x, y uint32) (result uint64) {
 	}
 	return
 }
+
+func (srv *serverState) GeoPos(key string, members []string) string {
+	set := srv.getSortedSet(key, true)
+	var result []any
+	for _, member := range members {
+		rank := set.GetRank(member)
+		if rank != -1 {
+			result = append(result, []string{"0", "0"})
+		} else {
+			result = append(result, nil)
+		}
+	}
+	return encodeArray(result)
+}

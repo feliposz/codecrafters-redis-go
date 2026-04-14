@@ -49,7 +49,7 @@ func encodeArray(arr []any) string {
 		case error:
 			result += encodeError(value)
 		case nil:
-			result += encodeBulkString("")
+			result += "*-1\r\n"
 		case []any:
 			result += encodeArray(value)
 		case []string:
