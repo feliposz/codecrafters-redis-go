@@ -689,6 +689,9 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	case "GEOPOS":
 		response = srv.GeoPos(cmd[1], cmd[2:])
 
+	case "GEODIST":
+		response = srv.GeoDist(cmd[1], cmd[2], cmd[3])
+
 	}
 
 	if isWrite {

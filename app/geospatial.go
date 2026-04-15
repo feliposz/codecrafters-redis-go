@@ -98,3 +98,40 @@ func (srv *serverState) GeoPos(key string, members []string) string {
 	}
 	return encodeArray(result)
 }
+
+func degreeToRadians(deg float64) float64 {
+	return deg * (math.Pi / 180.0)
+}
+
+const earthRadiusInMeters = 6372797.560856
+
+// Calculate distance using haversine great circle distance formula.
+// NOTE: direct translation from geohash_helper.c implementation
+func geohashGetDistance(lon1d, lat1d, lon2d, lat2d float64) float64 {
+	lon1r := degreeToRadians(lon1d)
+	lon2r := degreeToRadians(lon2d)
+	lat1r := degreeToRadians(lat1d)
+	lat2r := degreeToRadians(lat2d)
+	v := math.Sin((lon2r - lon1r) / 2)
+	/* if v == 0 we can avoid doing expensive math when lons are practically the same */
+	if v == 0.0 {
+		return earthRadiusInMeters * math.Abs(lat2r-lat1r)
+	}
+	u := math.Sin((lat2r - lat1r) / 2)
+	a := u*u + math.Cos(lat1r)*math.Cos(lat2r)*v*v
+	return 2.0 * earthRadiusInMeters * math.Asin(math.Sqrt(a))
+}
+
+func (srv *serverState) GeoDist(key string, a string, b string) string {
+	set := srv.getSortedSet(key, true)
+	scoreA := set.GetScore(a)
+	scoreB := set.GetScore(b)
+	if scoreA == -1 || scoreB == -1 {
+		return encodeError(fmt.Errorf("invalid location"))
+	}
+	longA, latA := GeoDecode(scoreA)
+	longB, latB := GeoDecode(scoreB)
+	distance := geohashGetDistance(longA, latA, longB, latB)
+	distanceStr := fmt.Sprintf("%.10f", distance)
+	return encodeBulkString(distanceStr)
+}
