@@ -285,12 +285,12 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	isWrite := false
 	command := strings.ToUpper(cmd[0])
 
-	if !cli.auth && command != "AUTH" {
+	if cli != nil && !cli.auth && command != "AUTH" {
 		response = encodeErrorType("NOAUTH", "Authentication required.")
 		return
 	}
 
-	subscribeMode := len(cli.subs) > 0
+	subscribeMode := cli != nil && len(cli.subs) > 0
 	isSubscribeModeCommand := slices.Index(subscribeModeCommands, command) != -1
 
 	if subscribeMode && !isSubscribeModeCommand {
