@@ -544,7 +544,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 			list.blocked = slices.DeleteFunc(list.blocked, func(ch *chan bool) bool { return ch == &waitingData })
 		}
 		if timedOut {
-			response = encodeNil()
+			response = encodeArray(nil)
 		} else {
 			value := list.data[0]
 			response = encodeStringArray([]string{listKey, value})
@@ -603,11 +603,14 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		start, _ := strconv.Atoi(cmd[2])
 		end, _ := strconv.Atoi(cmd[3])
 		set := srv.getSortedSet(key, false)
-		response = encodeArray(nil)
+		var result []any
 		if set != nil {
-			members := set.GetRange(start, end)
-			response = encodeArray(members)
+			result = set.GetRange(start, end)
 		}
+		if result == nil {
+			result = []any{}
+		}
+		response = encodeArray(result)
 
 	case "ZCARD":
 		key := cmd[1]

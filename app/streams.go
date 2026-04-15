@@ -284,7 +284,7 @@ func (srv *serverState) handleStreamRead(cmd []string) (response string) {
 					}
 					stream.blocked = slices.DeleteFunc(stream.blocked, func(ch *chan bool) bool { return ch == &waitForAdd })
 					if timedOut {
-						response = "$-1\r\n"
+						response = encodeArray(nil)
 						return
 					}
 				} else {
