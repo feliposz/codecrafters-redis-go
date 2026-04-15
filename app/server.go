@@ -692,6 +692,13 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 	case "GEODIST":
 		response = srv.GeoDist(cmd[1], cmd[2], cmd[3])
 
+	case "GEOSEARCH":
+		if cmd[2] != "FROMLONLAT" || cmd[5] != "BYRADIUS" {
+			response = encodeError(fmt.Errorf("not implemented"))
+		} else {
+			response = srv.GeoSearch(cmd[1], cmd[3], cmd[4], cmd[6], cmd[7])
+		}
+
 	}
 
 	if isWrite {

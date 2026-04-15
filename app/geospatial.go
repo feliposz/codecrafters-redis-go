@@ -135,3 +135,40 @@ func (srv *serverState) GeoDist(key string, a string, b string) string {
 	distanceStr := fmt.Sprintf("%.10f", distance)
 	return encodeBulkString(distanceStr)
 }
+
+func (srv *serverState) GeoSearch(key string, longStr string, latStr string, radiusStr string, unit string) string {
+	set := srv.getSortedSet(key, true)
+	longA, err := strconv.ParseFloat(longStr, 64)
+	if err != nil {
+		return encodeError(fmt.Errorf("invalid longitude argument"))
+	}
+	latA, err := strconv.ParseFloat(latStr, 64)
+	if err != nil {
+		return encodeError(fmt.Errorf("invalid latitude argument"))
+	}
+	radius, err := strconv.ParseFloat(radiusStr, 64)
+	if err != nil {
+		return encodeError(fmt.Errorf("invalid radius argument"))
+	}
+	switch unit {
+	case "m":
+		// already in meters
+	case "km":
+		radius *= 1000
+	case "mi":
+		radius *= 1609.344
+	case "ft":
+		radius *= 0.3048
+	default:
+		return encodeError(fmt.Errorf("invalid unit argument"))
+	}
+	var locations []string
+	for _, member := range set.sorted {
+		longB, latB := GeoDecode(member.score)
+		distance := geohashGetDistance(longA, latA, longB, latB)
+		if distance < radius {
+			locations = append(locations, member.member)
+		}
+	}
+	return encodeStringArray(locations)
+}
