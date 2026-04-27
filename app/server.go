@@ -79,12 +79,16 @@ func main() {
 	flag.StringVar(&config.replicaofHost, "replicaof", "", "start server in replica mode of given host and port")
 	flag.StringVar(&config.dir, "dir", cwd, "directory where RDB files are stored")
 	flag.StringVar(&config.dbFileName, "dbfilename", "", "name of the RDB file")
+	flag.StringVar(&config.appendOnly, "appendonly", "no", "controls whether AOF persistence is enabled or disabled")
+	flag.StringVar(&config.appendDirName, "appenddirname", "appendonlydir", "subdirectory under dir where AOF and manifest files are stored")
+	flag.StringVar(&config.appendFileName, "appendfilename", "appendonly.aof", "name of the append-only file that records write operations")
+	flag.StringVar(&config.appendFsync, "appendfsync", "everysec", "frequency of buffered writes to disk")
 	flag.Parse()
 
-	config.appendOnly = "no"
-	config.appendDirName = "appendonlydir"
-	config.appendFileName = "appendonly.aof"
-	config.appendFsync = "everysec"
+	if !flag.Parsed() {
+		flag.PrintDefaults()
+		os.Exit(2)
+	}
 
 	if len(config.replicaofHost) == 0 {
 		config.role = "master"
