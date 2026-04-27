@@ -162,6 +162,14 @@ func (srv *serverState) start() {
 		}
 	}
 
+	if srv.config.appendOnly == "yes" {
+		aofPath := filepath.Join(srv.config.dir, srv.config.appendDirName)
+		if err := os.MkdirAll(aofPath, 0750); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create directory '%s': %v\n", aofPath, err)
+			os.Exit(1)
+		}
+	}
+
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", srv.config.port))
 	if err != nil {
 		fmt.Printf("Failed to bind to port %d\n", srv.config.port)
