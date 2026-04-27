@@ -168,13 +168,24 @@ func (srv *serverState) start() {
 			fmt.Fprintf(os.Stderr, "Failed to create AOF directory '%s': %v\n", aofPath, err)
 			os.Exit(1)
 		}
-		aofFileName := filepath.Join(srv.config.dir, srv.config.appendDirName, srv.config.appendFileName+".1.incr.aof")
-		aofFile, err := os.OpenFile(aofFileName, os.O_CREATE, 0640)
+
+		aofFileName := srv.config.appendFileName + ".1.incr.aof"
+		aofFilePath := filepath.Join(srv.config.dir, srv.config.appendDirName, aofFileName)
+		aofFile, err := os.OpenFile(aofFilePath, os.O_CREATE, 0640)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create AOF file '%s': %v\n", aofFileName, err)
+			fmt.Fprintf(os.Stderr, "Failed to create AOF file '%s': %v\n", aofFilePath, err)
 			os.Exit(1)
 		}
-		defer aofFile.Close()
+		aofFile.Close()
+
+		manifestFileName := filepath.Join(srv.config.dir, srv.config.appendDirName, srv.config.appendFileName+".manifest")
+		manifestFile, err := os.OpenFile(manifestFileName, os.O_CREATE|os.O_RDWR, 0640)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create manifest file '%s': %v\n", manifestFileName, err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(manifestFile, "file %s seq %d type %s\n", aofFileName, 1, "i")
+		manifestFile.Close()
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", srv.config.port))
