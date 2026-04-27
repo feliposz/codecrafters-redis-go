@@ -16,14 +16,18 @@ import (
 )
 
 type serverConfig struct {
-	port          int
-	role          string
-	replid        string
-	replOffset    int
-	replicaofHost string
-	replicaofPort int
-	dir           string
-	dbfilename    string
+	port           int
+	role           string
+	replid         string
+	replOffset     int
+	replicaofHost  string
+	replicaofPort  int
+	dir            string
+	dbFileName     string
+	appendOnly     string
+	appendDirName  string
+	appendFileName string
+	appendFsync    string
 }
 
 type listEntry struct {
@@ -70,11 +74,17 @@ func main() {
 
 	var config serverConfig
 
+	cwd, _ := os.Getwd()
 	flag.IntVar(&config.port, "port", 6379, "listen on specified port")
 	flag.StringVar(&config.replicaofHost, "replicaof", "", "start server in replica mode of given host and port")
-	flag.StringVar(&config.dir, "dir", "", "directory where RDB files are stored")
-	flag.StringVar(&config.dbfilename, "dbfilename", "", "name of the RDB file")
+	flag.StringVar(&config.dir, "dir", cwd, "directory where RDB files are stored")
+	flag.StringVar(&config.dbFileName, "dbfilename", "", "name of the RDB file")
 	flag.Parse()
+
+	config.appendOnly = "no"
+	config.appendDirName = "appendonlydir"
+	config.appendFileName = "appendonly.aof"
+	config.appendFsync = "everysec"
 
 	if len(config.replicaofHost) == 0 {
 		config.role = "master"
@@ -140,8 +150,8 @@ func (srv *serverState) start() {
 		srv.replicaHandshake()
 	}
 
-	if len(srv.config.dir) > 0 && len(srv.config.dbfilename) > 0 {
-		rdbPath := filepath.Join(srv.config.dir, srv.config.dbfilename)
+	if len(srv.config.dir) > 0 && len(srv.config.dbFileName) > 0 {
+		rdbPath := filepath.Join(srv.config.dir, srv.config.dbFileName)
 		err := readRDB(rdbPath, srv.store, srv.ttl)
 		if err != nil {
 			fmt.Printf("Failed to load '%s': %v\n", rdbPath, err)
@@ -323,7 +333,15 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 		case "dir":
 			response = encodeStringArray([]string{"dir", srv.config.dir})
 		case "dbfilename":
-			response = encodeStringArray([]string{"dbfilename", srv.config.dbfilename})
+			response = encodeStringArray([]string{"dbfilename", srv.config.dbFileName})
+		case "appendonly":
+			response = encodeStringArray([]string{"appendonly", srv.config.appendOnly})
+		case "appenddirname":
+			response = encodeStringArray([]string{"appenddirname", srv.config.appendDirName})
+		case "appendfilename":
+			response = encodeStringArray([]string{"appendfilename", srv.config.appendFileName})
+		case "appendfsync":
+			response = encodeStringArray([]string{"appendfsync", srv.config.appendFsync})
 		}
 
 	case "SET":
