@@ -165,9 +165,16 @@ func (srv *serverState) start() {
 	if srv.config.appendOnly == "yes" {
 		aofPath := filepath.Join(srv.config.dir, srv.config.appendDirName)
 		if err := os.MkdirAll(aofPath, 0750); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create directory '%s': %v\n", aofPath, err)
+			fmt.Fprintf(os.Stderr, "Failed to create AOF directory '%s': %v\n", aofPath, err)
 			os.Exit(1)
 		}
+		aofFileName := filepath.Join(srv.config.dir, srv.config.appendDirName, srv.config.appendFileName+".1.incr.aof")
+		aofFile, err := os.OpenFile(aofFileName, os.O_CREATE, 0640)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create AOF file '%s': %v\n", aofFileName, err)
+			os.Exit(1)
+		}
+		defer aofFile.Close()
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", srv.config.port))
