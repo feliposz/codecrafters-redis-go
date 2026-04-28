@@ -215,7 +215,7 @@ func (cli *clientState) serve() {
 					response = encodeArray(nil)
 				} else {
 					for _, cmd := range cli.queue {
-						response, _ := cli.server.handleCommand(cmd, cli)
+						response, _ := cli.server.handleCommand(cmd, cli, false)
 						responses = append(responses, response)
 					}
 					response = encodeRawSimpleStringArray(responses)
@@ -253,7 +253,7 @@ func (cli *clientState) serve() {
 			}
 		} else {
 			fmt.Printf("[#%d] Command = %q\n", cli.id, cmd)
-			response, resynch = cli.server.handleCommand(cmd, cli)
+			response, resynch = cli.server.handleCommand(cmd, cli, false)
 		}
 
 		if len(response) > 0 {
@@ -300,7 +300,7 @@ var subscribeModeCommands = []string{
 	"QUIT",
 }
 
-func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response string, resynch bool) {
+func (srv *serverState) handleCommand(cmd []string, cli *clientState, isReplay bool) (response string, resynch bool) {
 	isWrite := false
 	command := strings.ToUpper(cmd[0])
 
@@ -731,7 +731,7 @@ func (srv *serverState) handleCommand(cmd []string, cli *clientState) (response 
 
 	}
 
-	if isWrite {
+	if isWrite && !isReplay {
 		srv.propagateToReplicas(cmd)
 		srv.aofPersist(cmd)
 	}
